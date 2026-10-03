@@ -2,7 +2,9 @@
 
 A broadcast camera's processing chain with every knob out, as an FFGL **effect**
 (`CC01`, shown as `SW CCU`) for Resolume Arena/Avenue. C++/GLSL, CMake MODULE →
-universal `.bundle` (macOS) + Windows `.dll`. MIT.
+universal `.bundle` (macOS) + Windows `.dll`. MIT. The same chain is also an
+**OpenFX** effect (`com.stoatworks.ccu`, shown as `CCU` in `Stoatworks`) for
+Resolve/Vegas/Nuke/Natron: `CCU.ofx.bundle`, CPU render, macOS/Windows/Linux.
 
 Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
 `Shaders.cpp`), the control laws, the defaults or the harness's tolerances.
@@ -14,6 +16,13 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
 - Build: `cmake --build build --parallel 4`
 - Install into Arena: `cmake --install build` — **not run from a session**, it writes
   into `~/Documents/Resolume Arena/Extra Effects`
+- OpenFX: built by default as `build/CCU.ofx.bundle` (`-DBUILD_OFX=OFF` skips it);
+  `-DCCU_BUILD_FFGL=OFF` builds it alone with no FFGL SDK and no GLEW (the Linux job).
+  Never copied into `/Library/OFX/Plugins` from a session.
+- The OpenFX plugin in a host: `~/Projects/resolume/resolume-ofx-bridge/build/ofxprobe
+  --dir build --render com.stoatworks.ccu --size 640x360 --out /tmp/o.bmp --set detailLevel=0.6`
+  (OFX script names are camelCase: `masterGain`, `crispeningFreq`, `hvRatio`,
+  `levelDependence`, `kneeOn`, `showDetail`, ...; Filter context, time 0, 8-bit only)
 - Render a frame offline: `./build/cctest --out /tmp/f.png --size 1920x1080`
 - Set anything by name: `--set "Detail Level=0.5" --set "Matrix=2" --set "Knee On=0"`
   (0..1 for sliders, the element index for Matrix, 0/1 for the booleans)
@@ -42,6 +51,10 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
 - The skin window's gain inside, outside, and on a neutral: `./build/cctest --skin`
 - The checks can fail: `./build/cctest --negative`; one perturbation verbosely:
   `./build/cctest --order --perturb 2` (bits in `Model.h`)
+- The OpenFX build's CPU copy of the two passes against the GPU, with controls that
+  must differ: `./build/cctest --cpu`; its cost, no GL: `./build/cctest --bench-cpu`
+- The FFGL bundle against the OpenFX bundle through their entry points, byte for byte:
+  `python3 tools/ofx_agree.py --build build` (needs ofxprobe)
 - No GL (what CI runs first): `./build/cctest --offline` = `--laws --names`
 - Every rendered check takes `--size WxH`; CI runs them at 320x180 with `--allow-no-gl`
 - Shaders through glslc: `tools/check-shaders.sh build/cctest`
@@ -55,9 +68,19 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
   linear pass (linearise, master gain, white balance, matrix; luma in alpha) into an
   RGBA32F buffer, then the process pass (detail, knee, gamma, black gamma, pedestal,
   white clip, mix) into the host's framebuffer. The C++ converts sliders to uniforms
-  (`Controls.cpp`) and computes the OETF's constants, the matrix and the drift in
-  double (`Ccu.cpp`, `Model.h`). The harness restates every law and holds the shaders
-  to it.
+  (`Controls.cpp`) and computes the OETF's constants, the matrix and the drift's pull
+  on the gains in double, rounding each to float once (`chain::Resolve` in
+  `Chain.cpp`, which both builds call; `Model.h`). The harness restates every law and
+  holds the shaders to it.
+- **The one copy: `CpuChain.cpp`** restates `kLinear` and `kProcess` statement for
+  statement in float, for the OpenFX build. **Edit a shader, edit it too** (`//=
+  mirrored` marks each place); `cctest --cpu` fails if they drift. The pointer
+  comments in `Shaders.cpp` sit OUTSIDE the GLSL strings on purpose: `demo/plugin.js`
+  carries a character-for-character copy of each string.
+- **OpenFX drift** is `model::DriftWalkAt( frame, 1 / fps )`: DriftStep replayed up
+  to the frame from at most 40 τ (800 s) back, bit-identical to the stepped walk
+  (`--laws`), 0.54 ms a frame at 60 fps. Frames render alone and out of order there;
+  nothing may carry state between renders.
 - **Master Gain is head-end gain, in linear light, before white balance** — not a
   video gain after gamma. A CCU's dB gain is sensor gain, and putting it there is what
   lets the knee catch a gained-up highlight. AGENTS.md has the decision.
@@ -85,6 +108,9 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
   instantiate the plugin at all.
 - `ccu_core` is an OBJECT library, not STATIC — the plugin registers itself from a
   file-scope constructor nothing references by name.
+- `ccu_dsp` (Controls, Chain, CpuChain — no GL, no SDK) is the OBJECT library the
+  OpenFX build links; every final target names it directly, because an OBJECT
+  library's objects do not travel through a second one (`ccu_core`).
 - `FFGLScopedFBOBinding.h` is not in the umbrella header; include `<ffglex/FFGLScopedFBOBinding.h>`.
 - `FFGLShader::Set` has no mat3 overload: the matrix goes in with `glUniformMatrix3fv`
   transposed (row-major on the CPU).
@@ -96,8 +122,12 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
   macOS, plus an `oxbow` load. Footage seen through `--pipe` (all 33 of Resolume's demo
   clips at the defaults, and the release video), judged by eye.
 - **Windows**: gated in Resolume Arena 7.27.1 on win-lab (Mesa llvmpipe, no GPU): 9/9, all 24 valued controls live. Never run on a Windows GPU.
-- No OpenFX port, no factory presets, no luma knee (the knee is per channel only), no
-  audio input. The browser demo (`demo/`) is a port of the shaders, not the plugin.
+- **The OpenFX build has never been in Resolve, Vegas, Nuke or Natron**: only
+  `ofxprobe` (Filter context, time 0, 8-bit), where it renders the FFGL build's pictures
+  byte for byte. The Windows `.ofx` is CI-built and never run; the Linux one is only
+  dlopened on Rocky 8 in CI. Not in a release yet (after v0.1.0).
+- No factory presets, no luma knee (the knee is per channel only), no audio input. The
+  browser demo (`demo/`) is a port of the shaders, not the plugin.
 - `StoatworksAbout.h` and `ATTRIBUTIONS.md` are generated by the backend's syncs now the
   project is registered; never edit them by hand.
 

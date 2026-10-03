@@ -1,14 +1,15 @@
 # CCU user guide
 
 CCU is **a broadcast camera's processing chain with every knob out, for [Resolume](https://resolume.com)
-Arena and Avenue**, as an FFGL effect. It does not paint a "video look" onto a clip. It runs the clip
-through the stages of a studio or OB camera in their fixed order, in linear light — master gain,
-white balance, matrix, detail, knee, gamma and black gamma, pedestal, white clip — each stage a
-known circuit, each knob labelled the way a camera control unit labels it. The badly set-up camera
-looks fall out of the order: halos the width of the detail delay, grain sharpened by a low coring,
-faces softened while the jacket stays sharp, highlights gone milky through the knee, a warm white
-that clips in one channel first, and a white balance that drifts as the camera warms up. None of it
-is drawn.
+Arena and Avenue**, as an FFGL effect — and, from the same source, as an OpenFX effect for DaVinci
+Resolve, Vegas, Nuke and Natron (see [OpenFX](#openfx--resolve-vegas-nuke-natron)). It does not
+paint a "video look" onto a clip. It runs the clip through the stages of a studio or OB camera in
+their fixed order, in linear light — master gain, white balance, matrix, detail, knee, gamma and
+black gamma, pedestal, white clip — each stage a known circuit, each knob labelled the way a camera
+control unit labels it. The badly set-up camera looks fall out of the order: halos the width of the
+detail delay, grain sharpened by a low coring, faces softened while the jacket stays sharp,
+highlights gone milky through the knee, a warm white that clips in one channel first, and a white
+balance that drifts as the camera warms up. None of it is drawn.
 
 ![The test card through the chain at its defaults: halos on the bars, the top of the grey ramp gone milky through the knee, the skin disc softened while the jacket's weave stays sharp](hero.png)
 
@@ -35,6 +36,8 @@ coring.*
 > 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29 host controls match the
 > declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks.
 > Software rendering says nothing about a GPU or about speed.
+> The OpenFX build renders the same pictures as the Resolume build, byte for byte, in the fleet's
+> OFX test host; it has **never been loaded into Resolve, Vegas, Nuke or Natron**.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -57,6 +60,23 @@ browser as **SW CCU**.
 The macOS download is a universal build (Apple silicon and Intel), as a `.dmg` or a `.zip`. The
 Windows download is an x64 installer or a `.zip`. It is not code-signed, so the installer trips
 SmartScreen once: **More info** → **Run anyway**.
+
+### Installing the OpenFX build
+
+The OpenFX build is a separate download, `ccu-ofx-<platform>.zip`, for macOS (universal), Windows
+(x64) and Linux (x86_64). It is not in v0.1.0; it arrives with the next release. Copy
+`CCU.ofx.bundle` from the zip into the standard OpenFX folder and restart the host:
+
+```
+macOS    /Library/OFX/Plugins/
+Windows  C:\Program Files\Common Files\OFX\Plugins\
+Linux    /usr/OFX/Plugins/
+```
+
+The effect appears as **CCU** in the **Stoatworks** group. It has the same controls, in the same
+groups, with the same ranges and defaults as the Resolume build, and everything in this guide
+applies to it, with the differences listed under [OpenFX](#openfx--resolve-vegas-nuke-natron)
+below.
 
 ---
 
@@ -164,7 +184,8 @@ clip it — the harness measures that order.
 20-second time constant, **60 × v mireds RMS**. Default **0.15, which is 9 mireds RMS**: visible over
 a minute, never a jump. A mired moves the R and B gains in opposite directions by about 0.4%. The
 walk runs on the host's clock, so it drifts at the speed the show plays at, and it is seeded so a
-slider move never jumps the state. 0 is a camera that has warmed up.
+slider move never jumps the state. 0 is a camera that has warmed up. In the OpenFX build the walk
+is a function of the frame number instead — see [OpenFX](#openfx--resolve-vegas-nuke-natron).
 
 ---
 
@@ -304,6 +325,34 @@ stepped by the host's clock.
 
 ---
 
+## OpenFX — Resolve, Vegas, Nuke, Natron
+
+The OpenFX build is the same chain. Everything between a slider and the picture's arithmetic — the
+control laws, the OETF's constants, the matrix, the drift's pull on the gains — is the same code as
+the Resolume build's; the two passes run on the CPU instead of the GPU, written out a second time
+statement for statement and checked against the GPU picture for picture (worst difference 1.6e-6,
+about 1/2,500 of an 8-bit step). What differs:
+
+- **Drift follows the frame number.** An editing host renders frames in any order, alone, and on
+  several threads at once, so the walk cannot be carried from one frame to the next. It is replayed
+  up to the frame being rendered — the same steps and the same seeded noise the Resolume build takes,
+  each one frame of the clip's frame rate long — so a frame looks the same however and whenever it is
+  rendered, and scrubbing shows the camera as it was at that frame. It starts from no drift at frame 0
+  and settles over the first minute, as the Resolume build does when the effect is added. The replay
+  looks back at most 800 seconds; what it leaves out weighs less than the rounding of the number.
+- **Alpha.** The chain works on straight colour, as it does in Resolume. A premultiplied clip is
+  divided by its alpha on the way in and multiplied back on the way out, which changes nothing on an
+  opaque clip.
+- **It runs on the CPU**: about 10 ms for a 1080p frame on 8 threads of an Apple M4 Max (see
+  Performance), against a fraction of a millisecond on the GPU in Resolume.
+- **The detail delay is in pixels of the image the host renders.** A host rendering a half-resolution
+  proxy gets halos twice as wide relative to the frame — as a camera of half the resolution would.
+
+Nothing is left out: CCU has no audio input, no beat sync and no presets in either build, so every
+control carries over.
+
+---
+
 ## Performance
 
 Measured by the offline harness on an M4 Max at the defaults, best of three runs of 60 frames after
@@ -318,6 +367,18 @@ a warm-up, on a GPU shared with other work:
 Two passes and eight texel fetches a pixel; it is cheap. GPU memory is one RGBA32F buffer at
 picture size: 32 MB at 1080p, 127 MB at 4K. Nothing was timed inside Resolume, and nothing was
 timed on Windows.
+
+The OpenFX build renders on the CPU. On the same machine, both passes at the defaults:
+
+| | 1 thread | 8 threads | 16 threads |
+| --- | --- | --- | --- |
+| 1280×720 | 29 ms | 4.5 ms | 3.8 ms |
+| 1920×1080 | 66–71 ms | 10 ms | 8.5–8.9 ms |
+| 3840×2160 | 274 ms | 39 ms | 33 ms |
+
+The host decides how many threads it lends. Replaying the drift adds about 0.5 ms a frame at 60 fps
+and 0.2 ms at 24, wherever on the timeline the frame is. Memory is two float copies of the frame: 66
+MB at 1080p. Not timed inside Resolve or any other commercial host.
 
 ---
 
@@ -377,7 +438,11 @@ failed to compile if one did, and a buffer that could not be allocated.
   real camera's line delays are whole lines.
 - **The drift's mired-to-gain law is a judged constant** (0.4% per mired), not a Planckian locus,
   and the drift has never been watched over a minute in a host.
-- **No audio input, no presets** and no OpenFX version.
+- **No audio input and no presets**, in either build.
+- **The OpenFX build has never been loaded into Resolve, Vegas, Nuke or Natron.** It has only run
+  in the fleet's own OFX test host, on 8-bit pictures at frame 0, where it matches the Resolume
+  build byte for byte; its Windows build has never been run, and its Linux build has only been
+  loaded, not rendered.
 - **Only ever run on an Apple M4 Max and on win-lab's software renderer**, although the macOS
   build contains an Intel slice. On Windows, see the note at the top of this guide.
 - **There is a browser demo** at [ccu-demo.stoatworks-labs.com](https://ccu-demo.stoatworks-labs.com).

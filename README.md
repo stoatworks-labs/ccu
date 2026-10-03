@@ -17,10 +17,13 @@
 > proves each can fail, and one recorded mutation of the shipped GLSL. It has
 > **never been loaded into Resolume**. It is loaded by
 > [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real FFGL host
-> and is not Resolume. See [Status](#status).
+> and is not Resolume. The OpenFX build renders the same pictures as the FFGL
+> build byte for byte through the fleet's OFX test host, and has **never been
+> loaded into Resolve, Vegas, Nuke or Natron**. See [Status](#status).
 
 A broadcast camera's processing chain with every knob out, as an FFGL effect
-for [Resolume](https://resolume.com) Arena and Avenue.
+for [Resolume](https://resolume.com) Arena and Avenue — and, from the same
+source, as an OpenFX effect for DaVinci Resolve, Vegas, Nuke and Natron.
 
 ![The test card through the chain at its defaults: halos on the bars, the top of the grey ramp gone milky through the knee, the skin disc softened while the jacket's weave stays sharp](docs/hero.png)
 
@@ -104,7 +107,8 @@ than being drawn:
 
 Nothing carries across frames except the drift, a double on the CPU. The
 chain is two GLSL passes and the constants — the OETF's, the matrix, the
-drift's step — are computed in double once a frame.
+drift's step — are computed in double once a frame. The OpenFX build runs the
+same two passes on the CPU; see [OpenFX](#openfx--resolve-vegas-nuke-natron).
 
 ## Controls
 
@@ -136,11 +140,71 @@ Every numeric control is 0..1 to the host; the conversions above live in
 `Controls.cpp`, written so each null is exact in binary. The parameter names
 are at most 16 characters, which is why it is `Crispening Freq`.
 
+## OpenFX — Resolve, Vegas, Nuke, Natron
+
+The same chain also builds as an OpenFX plugin, **CCU** in the **Stoatworks**
+group (`com.stoatworks.ccu`), for DaVinci Resolve (Edit, Color and Fusion),
+Vegas Pro, Nuke and Natron. It has the same 23 controls in the same seven
+groups, with the same 0..1 ranges and the same defaults, and it renders the
+same picture: everything between a slider and a uniform — the control laws,
+the OETF's constants, the matrix, the drift's pull on the gains, the rounding
+of each to float — is one function both builds call (`Chain.cpp`), and the
+two GLSL passes are restated statement for statement on the CPU
+(`CpuChain.cpp`) and held to the GPU per pixel by the harness.
+
+The OpenFX build is on `main` and not yet in a release; when it is, each
+release carries `ccu-ofx-macos-universal.zip`, `ccu-ofx-windows-x86_64.zip`
+and `ccu-ofx-linux-x86_64.zip`. Copy `CCU.ofx.bundle` from the zip into the
+standard OpenFX folder and restart the host:
+
+```
+macOS    /Library/OFX/Plugins/
+Windows  C:\Program Files\Common Files\OFX\Plugins\
+Linux    /usr/OFX/Plugins/
+```
+
+To build it yourself it comes out of the normal build as
+`build/CCU.ofx.bundle`; `-DCCU_BUILD_FFGL=OFF` builds it alone with nothing
+but a compiler (no FFGL SDK, no GLEW), which is how the Linux release job
+builds it on AlmaLinux 8 for Rocky 8's glibc.
+
+**What differs from the Resolume build**, all of it:
+
+- **Drift is a function of the frame number.** Resolume steps the white
+  balance's random walk once per frame it is handed, from the moment the effect
+  starts. An OpenFX host renders frames in any order, alone and on several
+  threads at once, so here the walk is replayed — the same steps, the same
+  seeded noise, the frame's duration from the clip's frame rate — up to the
+  frame being rendered. A frame renders the same alone, in sequence, or twice;
+  scrubbing shows the camera as it was at that frame. It starts from no drift
+  at frame 0 and settles over the first minute, as the Resolume build does when
+  the effect is added. The replay starts at most 800 s (40 time constants)
+  back, where what it forgets weighs less than a double's rounding: it is
+  bit-identical to the walk stepped from frame 0 at every frame the harness
+  probed, up to an hour in, and costs 0.5 ms a frame at 60 fps wherever the
+  timeline starts (a replay from frame 0 would cost 2.4 ms an hour in, and
+  grow).
+- **Alpha.** The chain works on straight colour in both builds. A
+  premultiplied clip is divided by its alpha on the way in and multiplied back
+  on the way out; at alpha 1 — every camera clip — both are exact.
+- **It runs on the CPU**, threaded through the host: about 10 ms a 1080p frame
+  on 8 threads of an M4 Max, against 0.17 ms for the GPU build. See Status.
+- **The detail delay is in pixels of the image the host renders**, as it is in
+  pixels of Resolume's composition. A host rendering a half-resolution proxy
+  gets halos twice as wide relative to the frame.
+
+Nothing is FFGL-only: the effect has no audio input, no host-beat control and
+no event button, so every control carries over. There are no presets in
+either build.
+
 ## Status
 
 **v0.1.0, released 2026-09-24, and honestly early.** Verified by
 measurement on an M4 Max, macOS 26.4, at 320×180 and 1280×720, on a fresh
-universal build. Never loaded into Resolume on macOS.
+universal build. Never loaded into Resolume on macOS. The OpenFX build came
+after v0.1.0 (2026-10-03); its rows below are `tools/verify.sh` on the same
+machine, and every FFGL row was re-run unchanged after the settings code
+moved into `Chain.cpp` for both builds to share.
 
 | Check | Result |
 | --- | --- |
@@ -157,11 +221,23 @@ universal build. Never loaded into Resolume on macOS.
 | shaders | all 3, as the plugin compiles them, through `glslc` |
 | `--pipe` | 2.5 frames in, exactly 2 out; an unknown cue refused (2); a failed render and a closed stdout (`\| head -c 1`) each exit 1; a boolean cue steps and a slider cue ramps |
 | the bundle | universal (`x86_64 arm64`), exports `plugMain`, ad-hoc signs; `oxbow` reports `SW CCU` / `CC01` / `effect` and renders 120 frames through `plugMain` |
+| `--cpu` | the OpenFX build's CPU copy of the two passes against the GPU, in float, on the test card at both rasters: worst **1.6e-6** (1/2 500 of an 8-bit step) across the defaults, the null chain, every stage moved, the skin window and detail view, hard clips, a picture 1.4× past white and frame 300 of a drifting run; the seven perturbed chains agree with their perturbed copies to 9.5e-7; alpha bitwise; and three controls that must differ do, by 1.1e-2 to 2.0e-2 |
+| `--laws` (drift) | the walk replayed from the frame number is **bit-identical** to the walk stepped from frame 0, at 22 frames probed at 24 and 60 fps up to an hour in; a replay from one time constant back is 0.33 out |
+| `tools/ofx_agree.py` | the FFGL bundle's render (`cctest --pipe`, GPU) against the OpenFX bundle's (`ofxprobe`, CPU), 8-bit both sides, on the same picture: **0 of 57 600 pixels differ** at the defaults and at four settings that move every stage; the control (Detail Level 0.30 against 0.40) differs at 9 208 pixels. Also 0 differing at 1280×720 |
+| the OpenFX bundle | universal, exports `OfxGetPlugin`, `CFBundleExecutable` names the binary, ad-hoc signs; `ofxprobe` resolves `com.stoatworks.ccu` to this build, sees 23 controls in seven groups plus the About block, and renders |
 
 Render cost, best of three runs of 60 frames after a warm-up, `glFinish`
 both sides, on a GPU shared with other builds: **0.06 ms** at 720p, **0.17
 ms** at 1080p, **0.68–0.70 ms** at 4K — 4% of a 60 fps frame at 4K. Two
 passes and eight texel fetches a pixel. macOS figures only.
+
+The OpenFX build on the CPU (`cctest --bench-cpu`, both passes, best of three
+runs of 20 frames): **66–71 ms** a 1080p frame on one thread, **10 ms** on 8
+threads (what `ofxprobe`'s thread suite gives it) and **8.5–8.9 ms** on all 16
+of the M4 Max's cores; 4K is 33–39 ms on 8–16 threads. The drift's replay adds
+0.54 ms a frame at 60 fps, 0.22 ms at 24. End to end through `ofxprobe` a
+1080p render is 26 ms over a 64×36 one, which includes the probe's own frame
+building and comparison. Not timed in any commercial host.
 
 Seen on footage: nine of Resolume's bundled demo clips through `--pipe` at
 the defaults, judged by eye beside the source — halos of the delay's width on
@@ -175,7 +251,17 @@ It has **never been loaded into Resolume on macOS**. Everything above was
 compiled, rendered and measured offline against the real plugin class in a
 headless CGL context, plus an `oxbow` load. How twenty-three controls in eight
 groups read in Arena's inspector on macOS is untested. The drift has not been
-watched over a minute in a host. On Windows, a CI build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29 host controls match the declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks (`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a GPU or about speed. No OpenFX port. There is a
+watched over a minute in a host. On Windows, a CI build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29 host controls match the declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks (`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a GPU or about speed.
+
+The OpenFX build has **never been loaded into DaVinci Resolve, Vegas, Nuke or
+Natron**. It has run in `ofxprobe`, the fleet's OFX test host, which hosts the
+Filter context only, hands it 8-bit RGBA, and (stock) renders at time 0 —
+so the drift's replay has been checked inside the harness against the FFGL
+build's stepped walk, not through a host at a later frame. The Windows `.ofx`
+is built by CI and has never been run; the Linux `.ofx` is built on AlmaLinux 8
+and only dlopened on Rocky 8 in CI, never rendered. How the controls read in a
+real host's inspector, and how 16-bit and float clips and premultiplied alpha
+come through one, is untested. There is a
 [user guide](https://stoatworks-labs.com/software/ccu/guide/) and a browser
 demo at [ccu-demo.stoatworks-labs.com](https://ccu-demo.stoatworks-labs.com/),
 which is a port of the shaders rather than the plugin.
@@ -205,6 +291,11 @@ cmake --install build     # into ~/Documents/Resolume Arena/Extra Effects
 macOS builds are universal (Apple Silicon + Intel) by default; add
 `-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster dev build. Windows needs GLEW via vcpkg.
 
+The same build produces the OpenFX plugin as `build/CCU.ofx.bundle`
+(`-DBUILD_OFX=OFF` to skip it). `-DCCU_BUILD_FFGL=OFF` builds the OpenFX plugin
+alone, with no FFGL SDK and no GLEW — any C++17 compiler on macOS, Windows or
+Linux. Nothing installs it: copy the bundle into the OpenFX folder above.
+
 ## Building and testing
 
 The offline harness renders the real plugin class headlessly:
@@ -214,8 +305,11 @@ The offline harness renders the real plugin class headlessly:
 ./build/cctest --list                                  # every control, kind and default
 ./build/cctest --identity --detail --coring --knee --gamma --order --skin   # each claim, measured
 ./build/cctest --negative                              # and the checks can fail
+./build/cctest --cpu                                   # the OpenFX build's CPU passes against the GPU
 ./build/cctest --offline                               # what needs no GL (CI)
 ./build/cctest --bench                                 # 720p, 1080p and 4K
+./build/cctest --bench-cpu                             # the OpenFX build's CPU cost, no GL
+python3 tools/ofx_agree.py --build build               # FFGL bundle against OFX bundle, byte for byte (needs ofxprobe)
 python3 tools/sweep.py                                 # no control is silently dead
 tools/verify.sh                                        # all of it, on a fresh universal build
 ```
