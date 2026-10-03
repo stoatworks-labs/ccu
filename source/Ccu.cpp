@@ -1,6 +1,6 @@
 #include "Ccu.h"
 
-#include "Controls.h"
+#include "Chain.h"
 #include "Diag.h"
 #include "Model.h"
 #include "Shaders.h"
@@ -44,11 +44,6 @@ GLint loc( const FFGLShader& shader, const char* name )
 {
 	return glGetUniformLocation( shader.GetGLID(), name );
 }
-
-float f( double v )
-{
-	return static_cast< float >( v );
-}
 } // namespace
 
 //---------------------------------------------------------------------------
@@ -62,37 +57,34 @@ Ccu::Ccu()
 
 	//---------------------------------------------------------------------
 	// Defaults. Filled BEFORE any declaration: SetParamInfof reads its
-	// default out of GetFloatParameter.
-	//
-	// They add up to a camera somebody set up in a hurry: a touch of
-	// detail at a two-pixel delay with the coring low enough to show it,
-	// the knee on with a soft slope so the top of the picture goes milky,
-	// a little black gamma, the Standard matrix, and a slow drift. The
-	// null is Mix at zero.
+	// default out of GetFloatParameter. They live in chain::HostValues, which
+	// the OpenFX build declares its defaults from too, and say there what
+	// each one is.
 	//---------------------------------------------------------------------
-	params[ PT_MASTER_GAIN ]  = 0.25f;  //exactly 0 dB
-	params[ PT_MASTER_BLACK ] = 0.25f;  //exactly 0
-	params[ PT_WHITE_CLIP ]   = 0.5f;   //exactly 1.0
-	params[ PT_R_GAIN ]       = 0.5f;   //exactly 0 dB
-	params[ PT_B_GAIN ]       = 0.5f;
-	params[ PT_DRIFT ]        = 0.15f;  //9 mireds RMS, tau 20 s
-	params[ PT_MATRIX ]       = static_cast< float >( model::kMatrixStandard );
-	params[ PT_SATURATION ]   = 0.5f;   //exactly 1
-	params[ PT_DETAIL_LEVEL ] = 0.3f;   //0.9: a step of h overshoots by 0.225 h
-	params[ PT_DETAIL_FREQ ]  = 0.125f; //exactly 2 px
-	params[ PT_HV_RATIO ]     = 0.5f;   //both exactly 1
-	params[ PT_CORING ]       = 0.3f;   //an edge below 0.0225 linear gets no detail
-	params[ PT_LEVEL_DEP ]    = 0.5f;
-	params[ PT_SKIN_DETAIL ]  = 0.4f;
-	params[ PT_SKIN_HUE ]     = 0.0556f;//20 degrees, a skin tone in linear RGB
-	params[ PT_SKIN_WIDTH ]   = 0.2727f;//+-20 degrees
-	params[ PT_KNEE_ON ]      = 1.0f;
-	params[ PT_KNEE_POINT ]   = 0.5f;   //0.7 linear
-	params[ PT_KNEE_SLOPE ]   = 0.25f;  //0.29
-	params[ PT_GAMMA ]        = 0.5f;   //exactly 0.45
-	params[ PT_BLACK_GAMMA ]  = 0.2f;
-	params[ PT_MIX ]          = 1.0f;
-	params[ PT_SHOW_DETAIL ]  = 0.0f;
+	const chain::HostValues defaults;
+	params[ PT_MASTER_GAIN ]  = defaults.masterGain;
+	params[ PT_MASTER_BLACK ] = defaults.masterBlack;
+	params[ PT_WHITE_CLIP ]   = defaults.whiteClip;
+	params[ PT_R_GAIN ]       = defaults.rGain;
+	params[ PT_B_GAIN ]       = defaults.bGain;
+	params[ PT_DRIFT ]        = defaults.drift;
+	params[ PT_MATRIX ]       = defaults.matrix;
+	params[ PT_SATURATION ]   = defaults.saturation;
+	params[ PT_DETAIL_LEVEL ] = defaults.detailLevel;
+	params[ PT_DETAIL_FREQ ]  = defaults.detailFreq;
+	params[ PT_HV_RATIO ]     = defaults.hvRatio;
+	params[ PT_CORING ]       = defaults.coring;
+	params[ PT_LEVEL_DEP ]    = defaults.levelDep;
+	params[ PT_SKIN_DETAIL ]  = defaults.skinDetail;
+	params[ PT_SKIN_HUE ]     = defaults.skinHue;
+	params[ PT_SKIN_WIDTH ]   = defaults.skinWidth;
+	params[ PT_KNEE_ON ]      = defaults.kneeOn;
+	params[ PT_KNEE_POINT ]   = defaults.kneePoint;
+	params[ PT_KNEE_SLOPE ]   = defaults.kneeSlope;
+	params[ PT_GAMMA ]        = defaults.gamma;
+	params[ PT_BLACK_GAMMA ]  = defaults.blackGamma;
+	params[ PT_MIX ]          = defaults.mix;
+	params[ PT_SHOW_DETAIL ]  = defaults.showDetail;
 
 	SetParamInfof( PT_MASTER_GAIN, "Master Gain", FF_TYPE_STANDARD );
 	SetParamInfof( PT_MASTER_BLACK, "Master Black", FF_TYPE_STANDARD );
@@ -231,44 +223,11 @@ FFResult Ccu::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 	++frameIndex;
 
 	//---------------------------------------------------------------------
-	// The settings, in physical units.
+	// The settings, as the uniforms the two passes read. Chain.cpp works
+	// them out in double and rounds each to float once; the OpenFX build
+	// calls the same function.
 	//---------------------------------------------------------------------
-	const double masterGain = controls::MasterGain( params[ PT_MASTER_GAIN ] );
-	const double pedestal   = controls::MasterBlack( params[ PT_MASTER_BLACK ] );
-	const double whiteClip  = controls::WhiteClip( params[ PT_WHITE_CLIP ] );
-
-	const double shiftMired = controls::DriftMireds( params[ PT_DRIFT ] ) * driftWalk;
-	const double gainR      = controls::ChannelGain( params[ PT_R_GAIN ] ) * std::exp( model::kDriftGainPerMired * shiftMired );
-	const double gainB      = controls::ChannelGain( params[ PT_B_GAIN ] ) * std::exp( -model::kDriftGainPerMired * shiftMired );
-
-	const int preset          = model::OptionIndex( params[ PT_MATRIX ], model::kMatrixCount );
-	const model::Mat3 matrix  = model::Saturation( controls::Saturation( params[ PT_SATURATION ] ) ) * model::PresetMatrix( preset );
-
-	const double detailLevel = controls::DetailLevel( params[ PT_DETAIL_LEVEL ] );
-	const double spacing     = controls::DetailSpacing( params[ PT_DETAIL_FREQ ] );
-	const int spacingInt     = static_cast< int >( std::floor( spacing ) );
-	const double spacingFrac = spacing - spacingInt;
-	const double hWeight     = controls::DetailHorizontalWeight( params[ PT_HV_RATIO ] );
-	const double vWeight     = controls::DetailVerticalWeight( params[ PT_HV_RATIO ] );
-	const double coringDead  = controls::CoringEdge( params[ PT_CORING ] ) * model::kDetailStepPeak;
-	const double levelDep    = controls::LevelDependence( params[ PT_LEVEL_DEP ] );
-	const double skinDetail  = controls::SkinDetail( params[ PT_SKIN_DETAIL ] );
-	const double skinHue     = controls::SkinHueDegrees( params[ PT_SKIN_HUE ] );
-	const double skinWidth   = controls::SkinWidthDegrees( params[ PT_SKIN_WIDTH ] );
-
-	const bool kneeOn      = params[ PT_KNEE_ON ] >= 0.5f;
-	const double kneePoint = controls::KneePoint( params[ PT_KNEE_POINT ] );
-	//Perturb 16: the slope 10% steeper than the control says (a negative control).
-	const double kneeSlope = controls::KneeSlope( params[ PT_KNEE_SLOPE ] ) * ( ( perturb & model::kPerturbKneeSlope ) ? 1.1 : 1.0 );
-
-	//Perturb 64: the exponent 0.05 above the control (a negative control).
-	const double exponent    = controls::GammaExponent( params[ PT_GAMMA ] ) + ( ( perturb & model::kPerturbGammaExponent ) ? 0.05 : 0.0 );
-	const model::Oetf oetf   = model::OetfFor( exponent );
-	const model::Oetf inverse = model::OetfFor( model::kOetfExponentNull );
-	const double blackGamma  = controls::BlackGamma( params[ PT_BLACK_GAMMA ] );
-
-	const bool showDetail = params[ PT_SHOW_DETAIL ] >= 0.5f;
-	const double mix      = controls::Mix( params[ PT_MIX ] );
+	const chain::Uniforms u = chain::Resolve( hostValues(), driftWalk, perturb );
 
 	//---------------------------------------------------------------------
 	// The buffer. Allocated before anything binds a texture: every ffglex
@@ -295,26 +254,20 @@ FFResult Ccu::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 
 		linearShader.Set( "InputTexture", 0 );
 		linearShader.Set( "MaxUV", maxCoords.s, maxCoords.t );
-		linearShader.Set( "MasterGain", f( masterGain ) );
-		linearShader.Set( "GainR", f( gainR ) );
-		linearShader.Set( "GainB", f( gainB ) );
-		{
-			float m[ 9 ];
-			for( int i = 0; i < 3; ++i )
-				for( int j = 0; j < 3; ++j )
-					m[ i * 3 + j ] = f( matrix.m[ i ][ j ] );
-			//Row-major on the CPU, so transposed on the way in.
-			glUniformMatrix3fv( loc( linearShader, "Matrix" ), 1, GL_TRUE, m );
-		}
-		linearShader.Set( "InvA", f( inverse.a ) );
-		linearShader.Set( "InvC", f( inverse.a - 1.0 ) );
-		linearShader.Set( "InvK", f( inverse.k ) );
-		linearShader.Set( "InvKnee", f( inverse.knee ) );
-		linearShader.Set( "InvGamma", f( 1.0 / inverse.gamma ) );
-		linearShader.Set( "Perturb", perturb );
-		linearShader.Set( "KneeOn", kneeOn ? 1 : 0 );
-		linearShader.Set( "KneePoint", f( kneePoint ) );
-		linearShader.Set( "KneeSlope", f( kneeSlope ) );
+		linearShader.Set( "MasterGain", u.MasterGain );
+		linearShader.Set( "GainR", u.GainR );
+		linearShader.Set( "GainB", u.GainB );
+		//Row-major on the CPU, so transposed on the way in.
+		glUniformMatrix3fv( loc( linearShader, "Matrix" ), 1, GL_TRUE, u.Matrix );
+		linearShader.Set( "InvA", u.InvA );
+		linearShader.Set( "InvC", u.InvC );
+		linearShader.Set( "InvK", u.InvK );
+		linearShader.Set( "InvKnee", u.InvKnee );
+		linearShader.Set( "InvGamma", u.InvGamma );
+		linearShader.Set( "Perturb", u.Perturb );
+		linearShader.Set( "KneeOn", u.KneeOn );
+		linearShader.Set( "KneePoint", u.KneePoint );
+		linearShader.Set( "KneeSlope", u.KneeSlope );
 		quad.Draw();
 	}
 
@@ -337,44 +290,74 @@ FFResult Ccu::ProcessOpenGL( ProcessOpenGLStruct* pGL )
 		processShader.Set( "PictureW", W );
 		processShader.Set( "PictureH", H );
 
-		processShader.Set( "DetailLevel", f( detailLevel ) );
-		processShader.Set( "SpacingInt", spacingInt );
-		processShader.Set( "SpacingFrac", f( spacingFrac ) );
-		processShader.Set( "HWeight", f( hWeight ) );
-		processShader.Set( "VWeight", f( vWeight ) );
-		processShader.Set( "CoringDead", f( coringDead ) );
-		processShader.Set( "LevelDep", f( levelDep ) );
-		processShader.Set( "LevelRef", f( model::kLevelDependenceRef ) );
-		processShader.Set( "SkinSuppress", f( skinDetail ) );
-		processShader.Set( "SkinHue", f( skinHue ) );
-		processShader.Set( "SkinWidth", f( skinWidth ) );
-		processShader.Set( "SkinInner", f( model::kSkinInnerFraction ) );
-		processShader.Set( "SkinChromaLo", f( model::kSkinChromaLow ) );
-		processShader.Set( "SkinChromaHi", f( model::kSkinChromaHigh ) );
+		processShader.Set( "DetailLevel", u.DetailLevel );
+		processShader.Set( "SpacingInt", u.SpacingInt );
+		processShader.Set( "SpacingFrac", u.SpacingFrac );
+		processShader.Set( "HWeight", u.HWeight );
+		processShader.Set( "VWeight", u.VWeight );
+		processShader.Set( "CoringDead", u.CoringDead );
+		processShader.Set( "LevelDep", u.LevelDep );
+		processShader.Set( "LevelRef", u.LevelRef );
+		processShader.Set( "SkinSuppress", u.SkinSuppress );
+		processShader.Set( "SkinHue", u.SkinHue );
+		processShader.Set( "SkinWidth", u.SkinWidth );
+		processShader.Set( "SkinInner", u.SkinInner );
+		processShader.Set( "SkinChromaLo", u.SkinChromaLo );
+		processShader.Set( "SkinChromaHi", u.SkinChromaHi );
 
-		processShader.Set( "KneeOn", kneeOn ? 1 : 0 );
-		processShader.Set( "KneePoint", f( kneePoint ) );
-		processShader.Set( "KneeSlope", f( kneeSlope ) );
+		processShader.Set( "KneeOn", u.KneeOn );
+		processShader.Set( "KneePoint", u.KneePoint );
+		processShader.Set( "KneeSlope", u.KneeSlope );
 
-		processShader.Set( "OetfA", f( oetf.a ) );
-		processShader.Set( "OetfC", f( oetf.a - 1.0 ) );
-		processShader.Set( "OetfK", f( oetf.k ) );
-		processShader.Set( "OetfBreak", f( model::kOetfBreak ) );
-		processShader.Set( "OetfGamma", f( oetf.gamma ) );
+		processShader.Set( "OetfA", u.OetfA );
+		processShader.Set( "OetfC", u.OetfC );
+		processShader.Set( "OetfK", u.OetfK );
+		processShader.Set( "OetfBreak", u.OetfBreak );
+		processShader.Set( "OetfGamma", u.OetfGamma );
 
-		processShader.Set( "BlackGamma", f( blackGamma ) );
-		processShader.Set( "BlackLevel", f( model::kBlackGammaLevel ) );
-		processShader.Set( "BlackLift", f( model::kBlackGammaLift ) );
-		processShader.Set( "Pedestal", f( pedestal ) );
-		processShader.Set( "WhiteClip", f( whiteClip ) );
+		processShader.Set( "BlackGamma", u.BlackGamma );
+		processShader.Set( "BlackLevel", u.BlackLevel );
+		processShader.Set( "BlackLift", u.BlackLift );
+		processShader.Set( "Pedestal", u.Pedestal );
+		processShader.Set( "WhiteClip", u.WhiteClip );
 
-		processShader.Set( "MixAmount", f( mix ) );
-		processShader.Set( "ShowDetail", showDetail ? 1 : 0 );
-		processShader.Set( "Perturb", perturb );
+		processShader.Set( "MixAmount", u.MixAmount );
+		processShader.Set( "ShowDetail", u.ShowDetail );
+		processShader.Set( "Perturb", u.Perturb );
 		quad.Draw();
 	}
 
 	return FF_SUCCESS;
+}
+
+//---------------------------------------------------------------------------
+chain::HostValues Ccu::hostValues() const
+{
+	chain::HostValues h;
+	h.masterGain  = params[ PT_MASTER_GAIN ];
+	h.masterBlack = params[ PT_MASTER_BLACK ];
+	h.whiteClip   = params[ PT_WHITE_CLIP ];
+	h.rGain       = params[ PT_R_GAIN ];
+	h.bGain       = params[ PT_B_GAIN ];
+	h.drift       = params[ PT_DRIFT ];
+	h.matrix      = params[ PT_MATRIX ];
+	h.saturation  = params[ PT_SATURATION ];
+	h.detailLevel = params[ PT_DETAIL_LEVEL ];
+	h.detailFreq  = params[ PT_DETAIL_FREQ ];
+	h.hvRatio     = params[ PT_HV_RATIO ];
+	h.coring      = params[ PT_CORING ];
+	h.levelDep    = params[ PT_LEVEL_DEP ];
+	h.skinDetail  = params[ PT_SKIN_DETAIL ];
+	h.skinHue     = params[ PT_SKIN_HUE ];
+	h.skinWidth   = params[ PT_SKIN_WIDTH ];
+	h.kneeOn      = params[ PT_KNEE_ON ];
+	h.kneePoint   = params[ PT_KNEE_POINT ];
+	h.kneeSlope   = params[ PT_KNEE_SLOPE ];
+	h.gamma       = params[ PT_GAMMA ];
+	h.blackGamma  = params[ PT_BLACK_GAMMA ];
+	h.mix         = params[ PT_MIX ];
+	h.showDetail  = params[ PT_SHOW_DETAIL ];
+	return h;
 }
 
 //---------------------------------------------------------------------------

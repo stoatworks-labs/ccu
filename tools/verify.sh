@@ -42,6 +42,11 @@
 #                                 window, 1 outside, 1 on a neutral
 #                   --negative    every one of those FAILS on a perturbed
 #                                 chain
+#                   --cpu         the OpenFX build's CPU copy of the two
+#                                 passes agrees with the GPU in float, at
+#                                 the defaults, at settings that move every
+#                                 stage, at a drifting frame and under every
+#                                 perturbation; and a control case differs
 #   pipe          the fleet's --pipe contract: whole frames only, a cue naming
 #                 no control refused, and exit 1 -- not a silent 0, not a
 #                 SIGPIPE 141 -- on a failed render or a closed stdout, the
@@ -57,6 +62,13 @@
 #   oxbow         a real FFGL host loads the bundle and reports the name, id
 #                 and type it sees -- the name field is not null-terminated
 #                 and a host truncates silently past 16 characters.
+#   openfx        the CCU.ofx bundle: Info.plist names the binary on disk, it
+#                 exports OfxGetPlugin, it is universal, it ad-hoc signs (the
+#                 release step); an OFX host (ofxprobe) finds THIS build under
+#                 the identifier, loads it and renders; and the FFGL and OFX
+#                 builds render the same picture byte for byte through their
+#                 real entry points (tools/ofx_agree.py), with a control case
+#                 that must differ.
 #
 set -uo pipefail
 
@@ -120,7 +132,7 @@ done
 
 for size in 320x180 1280x720; do
 	step "physics at $size"
-	for check in identity detail coring knee gamma order skin negative; do
+	for check in identity detail coring knee gamma order skin negative cpu; do
 		if out=$("$CCTEST" --$check --size $size 2>&1); then
 			pass "cctest --$check: $( printf '%s\n' "$out" | grep -v '^$' | grep -v 'checks,' | grep -v '(note' | tail -1 | sed 's/^ *//' )"
 		else
@@ -223,6 +235,7 @@ fi
 
 step "bench (for the record)"
 "$CCTEST" --bench --frames 60 2>&1 | sed -n '3,6p' | sed 's/^/   /'
+"$CCTEST" --bench-cpu 2>&1 | grep -E '^(resolution|1920x1080)|fps, an hour' | sed 's/^/   /'
 
 BUNDLE="$BUILD/CCU.bundle"
 BIN="$BUNDLE/Contents/MacOS/CCU"
@@ -285,6 +298,87 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$BUNDLE" ]; then
 		esac
 	else
 		printf '   skipped: oxbow not built at %s\n' "$OXBOW"
+	fi
+fi
+
+#---------------------------------------------------------------------------
+# The OpenFX bundle.
+#
+# cmake/InfoOFX.plist.in is copied from repo to repo, and the version it was
+# usually copied from had the PREVIOUS plugin's name hardcoded into
+# CFBundleExecutable. That does not fail the build: the bundle assembles, lipo
+# and nm both pass, an OFX host loads it and renders a correct frame. It fails
+# at RELEASE time, in codesign, with a message that names a "subcomponent"
+# and never mentions the plist. So: the plist against the binary on disk, and
+# the exact codesign the release job runs, against a COPY.
+#---------------------------------------------------------------------------
+OFXB="$BUILD/CCU.ofx.bundle"
+if [ "$(uname)" = "Darwin" ] && [ -d "$OFXB" ]; then
+	step "openfx"
+	named=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$OFXB/Contents/Info.plist" 2>/dev/null)
+	ofxid=$(/usr/libexec/PlistBuddy -c "Print :CFBundleIdentifier" "$OFXB/Contents/Info.plist" 2>/dev/null)
+	if [ -n "$named" ] && [ -f "$OFXB/Contents/MacOS/$named" ]; then
+		pass "CFBundleExecutable ($named) is on disk; CFBundleIdentifier is $ofxid"
+	else
+		fail "CFBundleExecutable is '$named' but no such binary is in Contents/MacOS"
+	fi
+
+	ofxbin="$OFXB/Contents/MacOS/CCU.ofx"
+	# Captured and matched, not piped into grep -q: see the registration step.
+	ofxsyms=$(nm -gU "$ofxbin" 2>/dev/null)
+	case "$ofxsyms" in
+		*_OfxGetPlugin*) pass "exports OfxGetPlugin" ;;
+		*) fail "no OfxGetPlugin -- no host will see a plugin in this bundle" ;;
+	esac
+
+	archs=$(lipo -archs "$ofxbin" 2>/dev/null)
+	case "$archs" in *arm64*) pass "arm64 present" ;; *) fail "no arm64 in CCU.ofx (got: $archs)" ;; esac
+	case "$archs" in *x86_64*) pass "x86_64 present" ;; *) fail "no x86_64 in CCU.ofx (got: $archs)" ;; esac
+
+	tmp=$(mktemp -d)
+	cp -R "$OFXB" "$tmp/"
+	if codesign --force --sign - --timestamp=none "$tmp/CCU.ofx.bundle" >/dev/null 2>&1; then
+		pass "ad-hoc signs (the command the release job runs)"
+	else
+		fail "the OpenFX bundle will not codesign"
+		codesign --force --sign - --timestamp=none "$tmp/CCU.ofx.bundle" 2>&1 | sed 's/^/      /'
+	fi
+	rm -rf "$tmp"
+
+	# An OFX host: ofxprobe, from resolume-ofx-bridge. It scans
+	# /Library/OFX/Plugins as well as --dir and the FIRST bundle declaring an
+	# identifier wins, so an installed copy would be probed instead of this
+	# build and every result below would describe it. Say which one it found.
+	OFXPROBE="${OFXPROBE:-../resolume-ofx-bridge/build/ofxprobe}"
+	[ -x "$OFXPROBE" ] || OFXPROBE="$HOME/Projects/resolume/resolume-ofx-bridge/build/ofxprobe"
+	if [ -x "$OFXPROBE" ]; then
+		described=$("$OFXPROBE" --dir "$BUILD" 2>&1)
+		case "$described" in
+			*"bundle     : $BUILD/CCU.ofx.bundle"*) pass "ofxprobe finds com.stoatworks.ccu in THIS build" ;;
+			*) fail "ofxprobe resolves com.stoatworks.ccu to another bundle -- something installed shares the identifier"
+			   printf '%s\n' "$described" | grep -E 'bundle|com.stoatworks.ccu' | sed 's/^/      /' ;;
+		esac
+		out=$(mktemp -d)
+		rendered=$("$OFXPROBE" --dir "$BUILD" --render com.stoatworks.ccu --size 640x360 --out "$out/ofx.bmp" 2>&1)
+		case "$rendered" in
+			*" 0 of "*" bytes differ"*)
+				fail "the OpenFX bundle renders its input unchanged" ;;
+			*"rendered 640x360"*)
+				pass "loads and renders at its defaults ($(printf '%s\n' "$rendered" | grep -oE '[0-9]+ of [0-9]+ bytes differ'))" ;;
+			*) fail "the OpenFX bundle does not render"
+			   printf '%s\n' "$rendered" | sed 's/^/      /' ;;
+		esac
+		rm -rf "$out"
+
+		if out=$(python3 tools/ofx_agree.py --build "$BUILD" --ofxprobe "$OFXPROBE" 2>&1); then
+			pass "the FFGL and OpenFX builds agree byte for byte through their entry points, and the control differs"
+			printf '%s\n' "$out" | sed 's/^   /      /'
+		else
+			fail "the FFGL and OpenFX builds disagree (tools/ofx_agree.py)"
+			printf '%s\n' "$out" | sed 's/^/      /'
+		fi
+	else
+		printf '   skipped: ofxprobe not built (../resolume-ofx-bridge) -- the OpenFX render is unchecked\n'
 	fi
 fi
 

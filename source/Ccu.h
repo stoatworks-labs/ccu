@@ -1,5 +1,6 @@
 #pragma once
 
+#include "Chain.h"
 #include "Clock.h"
 #include "PassBuffer.h"
 
@@ -129,6 +130,9 @@ public:
 	};
 
 private:
+	/// params[] as the shared settings code reads them (Chain.h).
+	ccu::chain::HostValues hostValues() const;
+
 	ffglex::FFGLShader linearShader;
 	ffglex::FFGLShader processShader;
 	ffglex::FFGLScreenQuad quad;

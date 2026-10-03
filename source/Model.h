@@ -35,7 +35,9 @@
 	into the host's framebuffer.
 
 	Nothing in the chain carries across frames except the white-balance
-	drift, which is a double on the CPU.
+	drift, which is a double on the CPU. (The OpenFX build, which renders
+	frames out of order, replays it from the frame number instead:
+	DriftWalkAt, below.)
 
 	------------------------------------------------ what this header holds
 
@@ -406,6 +408,46 @@ inline double DriftStep( double u, double dtSeconds, uint32_t frame )
 		return u;
 	const double a = std::exp( -dtSeconds / kDriftTauSeconds );
 	return a * u + std::sqrt( 1.0 - a * a ) * DriftGaussian( frame );
+}
+
+//---------------------------------------------------------------------------
+// The same walk as a function of the frame number, for a host that renders
+// frames out of order, alone and concurrently (the OpenFX build).
+//
+// The FFGL build steps the walk once a frame from u = 0: its first frame has
+// no dt and leaves u at 0, and frame n >= 1 steps with dt and the Gaussian
+// for n. So at frame n
+//
+//     u( n ) = sum over k = 1 .. n of  a^( n - k ) sqrt( 1 - a^2 ) g( k )
+//
+// and replaying those steps gives it back. Replaying ALL of them costs n
+// steps a frame, and a timeline that starts at 01:00:00:00 begins at frame
+// 86 400 at 24 fps -- 216 000 at 60. But step k weighs a^( n - k ) =
+// exp( -( n - k ) dt / tau ), and kDriftReplayTaus time constants back that
+// is exp( -40 ) = 4.2e-18: below half an ulp of any u this hash can produce
+// (|g| <= sqrt( 2 ln 2^24 ) = 5.8, and a realised |u| beyond 6 does not
+// happen). So the replay starts at most 40 tau = 800 s back, from u = 0,
+// and agrees with the full walk to the rounding of a double -- `cctest
+// --laws` measures that, and the cost. At 60 fps that is 48 000 steps.
+//
+// The steps are DriftStep's own, with the frame's dt; nothing about the walk
+// is restated here. Frame 0 and before is u = 0, as the FFGL build's first
+// frame is.
+//---------------------------------------------------------------------------
+inline constexpr double kDriftReplayTaus = 40.0;
+
+inline double DriftWalkAt( int64_t frame, double dtSeconds )
+{
+	if( frame <= 0 || !( dtSeconds > 0.0 ) )
+		return 0.0;
+	const double windowFrames = std::ceil( kDriftReplayTaus * kDriftTauSeconds / dtSeconds );
+	int64_t first             = 1;
+	if( static_cast< double >( frame ) > windowFrames )
+		first = frame - static_cast< int64_t >( windowFrames ) + 1;
+	double u = 0.0;
+	for( int64_t k = first; k <= frame; ++k )
+		u = DriftStep( u, dtSeconds, static_cast< uint32_t >( k ) );
+	return u;
 }
 
 //---------------------------------------------------------------------------

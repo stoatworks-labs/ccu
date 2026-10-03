@@ -15,7 +15,10 @@
 	                picture with the detail signal about mid grey.
 
 	The shaders ARE the chain: each stage lives once, here, and the C++
-	only converts sliders to uniforms and computes the constants in double.
+	only converts sliders to uniforms and computes the constants in double
+	(Chain.cpp). The one exception is the OpenFX build, which has no GPU to
+	run these on: CpuChain.cpp restates both passes statement for statement
+	in float, and `cctest --cpu` holds that copy to these.
 	`cctest --dump-shaders` writes these exact strings and
 	`tools/check-shaders.sh` compiles them, so what is checked is what the
 	driver gets.

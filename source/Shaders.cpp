@@ -26,6 +26,11 @@ void main()
 // CPU (Model.h, OetfFor), so the linearise here and the encode in the
 // process pass are exact inverses in principle and the identity check's
 // bound is the float arithmetic alone.
+//
+//= mirrored on the CPU, statement for statement, by LinearRows in
+//= CpuChain.cpp for the OpenFX build. Edit both; `cctest --cpu` holds them
+//= together. (Not inside the string: demo/plugin.js carries a character-
+//= for-character copy of it that check_shaders.py compares.)
 //---------------------------------------------------------------------------
 const char* const kLinear = R"(#version 410 core
 
@@ -96,6 +101,10 @@ void main()
 
 //---------------------------------------------------------------------------
 // 2. process: detail, knee, gamma, black gamma, pedestal, white clip, mix.
+//
+//= mirrored on the CPU, statement for statement, by ProcessRow in
+//= CpuChain.cpp for the OpenFX build. Edit both; `cctest --cpu` holds them
+//= together.
 //---------------------------------------------------------------------------
 const char* const kProcess = R"(#version 410 core
 

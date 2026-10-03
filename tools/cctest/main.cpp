@@ -33,6 +33,14 @@
 		                                is 1 - Skin Detail, outside it 1, and a
 		                                neutral is never skin
 		cctest --negative               every check above can FAIL
+		cctest --cpu                    the OpenFX build's CPU copy of the
+		                                two passes (CpuChain.cpp) against
+		                                the GPU, picture for picture, at the
+		                                defaults, at settings that move every
+		                                stage, at a drifting frame and under
+		                                every perturbation; and a control
+		                                case that must differ
+		cctest --bench-cpu              that copy's cost, no GL
 		cctest --laws --names           the checks that need no GL
 		cctest --bench                  the render cost
 		cctest --dump-shaders DIR       the exact GLSL the plugin compiles
@@ -46,7 +54,9 @@
 */
 
 #include "Ccu.h"
+#include "Chain.h"
 #include "Controls.h"
+#include "CpuChain.h"
 #include "Model.h"
 #include "Shaders.h"
 
@@ -66,6 +76,7 @@
 #include <set>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <unistd.h>
 #include <utility>
 #include <vector>
@@ -1418,6 +1429,325 @@ int runSkin( int W, int H, int perturb, bool quiet = false )
 }
 
 //---------------------------------------------------------------------------
+// --cpu: the OpenFX build's copy of the two passes against the GPU.
+//
+// The OpenFX plugin runs `chain::Resolve` -- the same uniforms, rounded to
+// float the same way -- and then CpuChain.cpp's statement-for-statement copy
+// of kLinear and kProcess. This renders one picture through the real plugin
+// class on the GPU and through that copy on the CPU and compares them per
+// channel, in float.
+//
+// The tolerance is NOT derived, unlike every other one in this file: the two
+// sides evaluate the same expressions in the same precision, but pow, atan
+// and division are a driver's on one side and libm's on the other, and the
+// driver is free to fuse and reassociate. 1e-5 is about six times the worst
+// seen across every case below on an M4 Max (1.6e-6, recorded in AGENTS.md),
+// and 1/400 of an 8-bit step. What it must catch -- a stage out of order, a
+// constant mistyped, a uniform read from the wrong place -- moves pixels by
+// 1e-3 and up, which the control cases at the end show the comparison seeing.
+//---------------------------------------------------------------------------
+const double kCpuTolerance = 1e-5;
+
+/// The controls as the plugin holds them, read back out of it: the CPU side
+/// is handed exactly the slider values the GPU side was.
+ccu::chain::HostValues hostValuesOf( Ccu& p )
+{
+	ccu::chain::HostValues h;
+	h.masterGain  = p.GetFloatParameter( Ccu::PT_MASTER_GAIN );
+	h.masterBlack = p.GetFloatParameter( Ccu::PT_MASTER_BLACK );
+	h.whiteClip   = p.GetFloatParameter( Ccu::PT_WHITE_CLIP );
+	h.rGain       = p.GetFloatParameter( Ccu::PT_R_GAIN );
+	h.bGain       = p.GetFloatParameter( Ccu::PT_B_GAIN );
+	h.drift       = p.GetFloatParameter( Ccu::PT_DRIFT );
+	h.matrix      = p.GetFloatParameter( Ccu::PT_MATRIX );
+	h.saturation  = p.GetFloatParameter( Ccu::PT_SATURATION );
+	h.detailLevel = p.GetFloatParameter( Ccu::PT_DETAIL_LEVEL );
+	h.detailFreq  = p.GetFloatParameter( Ccu::PT_DETAIL_FREQ );
+	h.hvRatio     = p.GetFloatParameter( Ccu::PT_HV_RATIO );
+	h.coring      = p.GetFloatParameter( Ccu::PT_CORING );
+	h.levelDep    = p.GetFloatParameter( Ccu::PT_LEVEL_DEP );
+	h.skinDetail  = p.GetFloatParameter( Ccu::PT_SKIN_DETAIL );
+	h.skinHue     = p.GetFloatParameter( Ccu::PT_SKIN_HUE );
+	h.skinWidth   = p.GetFloatParameter( Ccu::PT_SKIN_WIDTH );
+	h.kneeOn      = p.GetFloatParameter( Ccu::PT_KNEE_ON );
+	h.kneePoint   = p.GetFloatParameter( Ccu::PT_KNEE_POINT );
+	h.kneeSlope   = p.GetFloatParameter( Ccu::PT_KNEE_SLOPE );
+	h.gamma       = p.GetFloatParameter( Ccu::PT_GAMMA );
+	h.blackGamma  = p.GetFloatParameter( Ccu::PT_BLACK_GAMMA );
+	h.mix         = p.GetFloatParameter( Ccu::PT_MIX );
+	h.showDetail  = p.GetFloatParameter( Ccu::PT_SHOW_DETAIL );
+	return h;
+}
+
+/// The whole CPU chain over a picture, single-threaded.
+std::vector< float > cpuRender( const ccu::chain::Uniforms& u, const Picture& pic, int W, int H )
+{
+	std::vector< float > linear( pic.size() ), out( pic.size() );
+	ccu::cpu::LinearRows( u, pic.data(), W, 0, H, linear.data() );
+	for( int y = 0; y < H; ++y )
+		ccu::cpu::ProcessRow( u, linear.data(), pic.data(), W, H, y, 0, W, out.data() + static_cast< size_t >( y ) * W * 4 );
+	return out;
+}
+
+std::vector< unsigned char > buildCard( int width, int height, int64_t frame );
+
+/// The test card as floats, optionally pushed past white.
+Picture cardPicture( int W, int H, double scale )
+{
+	const std::vector< unsigned char > card = buildCard( W, H, 17 );
+	Picture p( card.size() );
+	for( size_t i = 0; i < card.size(); ++i )
+		p[ i ] = static_cast< float >( card[ i ] / 255.0 * ( i % 4 == 3 ? 1.0 : scale ) );
+	return p;
+}
+
+struct CpuCompare
+{
+	double worst    = 0.0;
+	double alpha    = 0.0;
+	size_t beyond   = 0;///< channels further apart than the tolerance
+	size_t eightBit = 0;///< channels whose 8-bit quantisation differs
+};
+
+CpuCompare compareCpu( const std::vector< float >& gpu, const std::vector< float >& cpu )
+{
+	CpuCompare c;
+	for( size_t i = 0; i < gpu.size(); ++i )
+	{
+		const double e = std::fabs( static_cast< double >( gpu[ i ] ) - cpu[ i ] );
+		if( i % 4 == 3 )
+		{
+			c.alpha = std::max( c.alpha, e );
+			continue;
+		}
+		c.worst = std::max( c.worst, e );
+		if( e > kCpuTolerance )
+			++c.beyond;
+		const auto q = []( float v ) { return std::lround( std::clamp( v, 0.0f, 1.0f ) * 255.0f ); };
+		if( q( gpu[ i ] ) != q( cpu[ i ] ) )
+			++c.eightBit;
+	}
+	return c;
+}
+
+/// One picture through both, `frames` GPU frames in (the drift moves) and
+/// the CPU at the walk's value for the last of them.
+bool renderBoth( const std::vector< std::string >& settings, const std::vector< std::string >& cpuSettings, int perturbGpu, int perturbCpu, int W, int H,
+                 const Picture& pic, int frames, std::vector< float >& gpu, std::vector< float >& cpu, double* walkGpu = nullptr, double* walkCpu = nullptr )
+{
+	Session s;
+	for( const std::string& setting : settings )
+	{
+		std::string error;
+		if( !applySetting( s.plugin, setting, error ) )
+		{
+			std::fprintf( stderr, "%s\n", error.c_str() );
+			return false;
+		}
+	}
+	s.plugin.SetPerturbForTest( perturbGpu );
+	if( !s.begin( W, H ) )
+		return false;
+	for( int f = 0; f < frames; ++f )
+		if( !s.render( pic ) )
+			return false;
+	gpu = s.readBackFloat();
+
+	//The CPU side's sliders: the same plugin's, then any overrides (the
+	//control case moves one).
+	Ccu other;
+	for( const std::string& setting : settings )
+	{
+		std::string error;
+		applySetting( other, setting, error );
+	}
+	for( const std::string& setting : cpuSettings )
+	{
+		std::string error;
+		applySetting( other, setting, error );
+	}
+	const double walk = model::DriftWalkAt( frames - 1, 1.0 / s.fps );
+	if( walkGpu )
+		*walkGpu = s.plugin.DriftStateForTest();
+	if( walkCpu )
+		*walkCpu = walk;
+	s.end();
+	cpu = cpuRender( ccu::chain::Resolve( hostValuesOf( other ), walk, perturbCpu ), pic, W, H );
+	return true;
+}
+
+int runCpu( int W, int H, int perturb, bool quiet = false )
+{
+	if( !quiet )
+		std::printf( "== cpu at %dx%d: the OpenFX build's copy of the two passes against the GPU (tolerance %.0e)\n", W, H, kCpuTolerance );
+	int failed = 0;
+
+	struct Case
+	{
+		const char* what;
+		std::vector< std::string > settings;
+		double scale;
+		int frames;
+	};
+	const std::vector< Case > cases = {
+		{ "the defaults (a camera set up in a hurry)", {}, 1.0, 1 },
+		{ "the null chain", { "Drift=0", "Matrix=0", "Detail Level=0", "Coring=0", "Level Dependence=0", "Skin Detail=0", "Knee On=0", "Black Gamma=0" }, 1.0, 1 },
+		{ "everything moved: fractional delay, film matrix, low knee, high gamma, lifted blacks, gain, pedestal, clip, mix",
+		  { "Master Gain=0.6", "Master Black=0.6", "White Clip=0.2", "R Gain=0.7", "B Gain=0.3", "Matrix=3", "Saturation=0.8", "Detail Level=0.8",
+		    "Crispening Freq=0.33", "H/V Ratio=0.7", "Coring=0.1", "Level Dependence=0.9", "Knee Point=0.2", "Knee Slope=0.1", "Gamma=0.8",
+		    "Black Gamma=0.9", "Mix=0.7" },
+		  1.0, 1 },
+		{ "the skin window moved and widened, the detail view, vertical-heavy",
+		  { "Skin Detail=1", "Skin Hue=0.5", "Skin Width=1", "Show Detail=1", "H/V Ratio=0.2", "Matrix=2", "Crispening Freq=1" }, 1.0, 1 },
+		{ "the knee off at +18 dB, Standard matrix, low gamma: hard clips", { "Knee On=0", "Master Gain=1", "Gamma=0.1", "Saturation=1" }, 1.0, 1 },
+		{ "a float picture 1.4x past white", { "Detail Level=0.6", "Black Gamma=0.5" }, 1.4, 1 },
+		{ "a drifting frame: Drift 1, frame 300 of a 60 fps run", { "Drift=1" }, 1.0, 301 },
+	};
+
+	CpuCompare all;
+	for( const Case& c : cases )
+	{
+		const Picture pic = cardPicture( W, H, c.scale );
+		std::vector< float > gpu, cpu;
+		double walkGpu = 0.0, walkCpu = 0.0;
+		if( !renderBoth( c.settings, {}, perturb, perturb, W, H, pic, c.frames, gpu, cpu, &walkGpu, &walkCpu ) )
+			return report( false, quiet, "render failed: %s", c.what );
+		const CpuCompare r = compareCpu( gpu, cpu );
+		all.worst          = std::max( all.worst, r.worst );
+		all.eightBit += r.eightBit;
+		failed += report( r.beyond == 0 && r.alpha == 0.0, quiet, "%s: worst %.2e (%.4f of an 8-bit step), %zu channels past tolerance, %zu of %zu differ at 8 bits; alpha bitwise",
+		                  c.what, r.worst, r.worst * 255.0, r.beyond, r.eightBit, gpu.size() / 4 * 3 );
+		if( c.frames > 1 )
+			failed += report( std::fabs( walkGpu - walkCpu ) < 1e-12 && walkCpu != 0.0, quiet,
+			                  "  the walk at frame %d: stepped frame by frame %.15f, replayed from the frame number %.15f (%.1e apart)", c.frames - 1, walkGpu, walkCpu,
+			                  std::fabs( walkGpu - walkCpu ) );
+	}
+
+	//Every perturbation is in the copy too, so a perturbed chain agrees with
+	//its perturbed copy -- the copy is the shaders, negative controls and all.
+	if( perturb == 0 )
+	{
+		const int bits[] = { model::kPerturbGammaSpace, model::kPerturbKneeFirst, model::kPerturbNoCoring, model::kPerturbDoubleDetail,
+		                     model::kPerturbKneeSlope, model::kPerturbSkinIgnored, model::kPerturbGammaExponent };
+		double worst = 0.0;
+		size_t beyond = 0;
+		for( int bit : bits )
+		{
+			const Picture pic = cardPicture( W, H, 1.0 );
+			std::vector< float > gpu, cpu;
+			if( !renderBoth( { "Master Gain=0.5", "Detail Level=0.6" }, {}, bit, bit, W, H, pic, 1, gpu, cpu ) )
+				return report( false, quiet, "render failed: perturbation %d", bit );
+			const CpuCompare r = compareCpu( gpu, cpu );
+			worst              = std::max( worst, r.worst );
+			beyond += r.beyond;
+		}
+		failed += report( beyond == 0, quiet, "each of the 7 perturbed chains agrees with its perturbed copy: worst %.2e", worst );
+
+		//The controls: the comparison must be able to fail. One slider a
+		//hundredth apart, and the GPU perturbed while the copy is not.
+		const Picture pic = cardPicture( W, H, 1.0 );
+		std::vector< float > gpu, cpu;
+		renderBoth( {}, { "Detail Level=0.31" }, 0, 0, W, H, pic, 1, gpu, cpu );
+		const CpuCompare slider = compareCpu( gpu, cpu );
+		failed += report( slider.beyond > 0, false, "control: Detail Level 0.30 on the GPU against 0.31 on the CPU DIFFERS: worst %.2e, %zu channels past tolerance",
+		                  slider.worst, slider.beyond );
+		renderBoth( {}, {}, model::kPerturbKneeSlope, 0, W, H, pic, 1, gpu, cpu );
+		const CpuCompare steeper = compareCpu( gpu, cpu );
+		failed += report( steeper.beyond > 0, false, "control: a knee 10%% steeper on the GPU only DIFFERS: worst %.2e, %zu channels past tolerance", steeper.worst,
+		                  steeper.beyond );
+		renderBoth( { "Drift=1" }, {}, 0, 0, W, H, pic, 301, gpu, cpu );
+		std::vector< float > gpu0, cpu0;
+		renderBoth( { "Drift=1" }, {}, 0, 0, W, H, pic, 1, gpu0, cpu0 );
+		const CpuCompare drifted = compareCpu( gpu, cpu0 );
+		failed += report( drifted.beyond > 0, false, "control: frame 300 of a drifting run against frame 0 DIFFERS: worst %.2e", drifted.worst );
+	}
+	return failed;
+}
+
+//---------------------------------------------------------------------------
+// --bench-cpu: what the OpenFX build's render costs. No GL.
+//---------------------------------------------------------------------------
+double cpuFrameMs( const ccu::chain::Uniforms& u, const Picture& pic, int W, int H, unsigned threads, int frames )
+{
+	std::vector< float > linear( pic.size() ), out( pic.size() );
+	auto rows = [ & ]( auto&& body ) {
+		std::vector< std::thread > pool;
+		const int chunk = ( H + static_cast< int >( threads ) - 1 ) / static_cast< int >( threads );
+		for( int y0 = 0; y0 < H; y0 += chunk )
+			pool.emplace_back( [ =, &body ] { body( y0, std::min( H, y0 + chunk ) ); } );
+		for( std::thread& t : pool )
+			t.join();
+	};
+	double best = 1e9;
+	for( int run = 0; run < 3; ++run )
+	{
+		const auto start = std::chrono::steady_clock::now();
+		for( int f = 0; f < frames; ++f )
+		{
+			rows( [ & ]( int y0, int y1 ) { ccu::cpu::LinearRows( u, pic.data(), W, y0, y1, linear.data() ); } );
+			rows( [ & ]( int y0, int y1 ) {
+				for( int y = y0; y < y1; ++y )
+					ccu::cpu::ProcessRow( u, linear.data(), pic.data(), W, H, y, 0, W, out.data() + static_cast< size_t >( y ) * W * 4 );
+			} );
+		}
+		best = std::min( best, std::chrono::duration< double, std::milli >( std::chrono::steady_clock::now() - start ).count() / frames );
+	}
+	return best;
+}
+
+int runBenchCpu( int frames )
+{
+	const unsigned hw = std::max( 1u, std::thread::hardware_concurrency() );
+	std::printf( "The OpenFX build's CPU chain (chain::Resolve + CpuChain.cpp), default controls, best of three runs of %d frames.\n"
+	             "Both passes; not the host's pixel conversion or its thread pool.\n\n",
+	             frames );
+	std::printf( "resolution     threads   ms/frame\n" );
+	struct Size
+	{
+		const char* name;
+		int width, height;
+	};
+	const Size sizes[] = { { "1280x720  ", 1280, 720 }, { "1920x1080 ", 1920, 1080 }, { "3840x2160 ", 3840, 2160 } };
+	const ccu::chain::Uniforms u = ccu::chain::Resolve( ccu::chain::HostValues(), 0.0 );
+	for( const Size& size : sizes )
+	{
+		const Picture pic = cardPicture( size.width, size.height, 1.0 );
+		for( unsigned threads : { 1u, 8u, hw } )
+		{
+			if( threads > hw )
+				continue;
+			std::printf( "%s    %3u      %8.2f\n", size.name, threads, cpuFrameMs( u, pic, size.width, size.height, threads, frames ) );
+			if( threads == hw )
+				break;
+		}
+	}
+
+	//The drift's replay, which the OpenFX build pays once a frame.
+	std::printf( "\nthe drift replayed to a frame (model::DriftWalkAt), once per rendered frame:\n" );
+	for( double fps : { 24.0, 60.0 } )
+	{
+		const int64_t frame = static_cast< int64_t >( 3600.0 * fps );//an hour in: the window is full
+		//Written to a volatile so neither loop can be optimised away.
+		static volatile double sink = 0.0;
+		double best = 1e9;
+		for( int run = 0; run < 5; ++run )
+		{
+			const auto start = std::chrono::steady_clock::now();
+			sink = model::DriftWalkAt( frame, 1.0 / fps );
+			best = std::min( best, std::chrono::duration< double, std::milli >( std::chrono::steady_clock::now() - start ).count() );
+		}
+		const auto start = std::chrono::steady_clock::now();
+		double u0        = 0.0;
+		for( int64_t k = 1; k <= frame; ++k )
+			u0 = model::DriftStep( u0, 1.0 / fps, static_cast< uint32_t >( k ) );
+		sink              = u0;
+		const double full = std::chrono::duration< double, std::milli >( std::chrono::steady_clock::now() - start ).count();
+		std::printf( "  %2.0f fps, an hour in: %.2f ms (a replay from frame 0 would be %.1f ms)\n", fps, best, full );
+	}
+	return 0;
+}
+
+//---------------------------------------------------------------------------
 // --negative: every check can fail.
 //---------------------------------------------------------------------------
 int runNegative( int W, int H )
@@ -1576,6 +1906,54 @@ int runLaws()
 		failed += report( model::DriftStep( 0.7, 0.0, 5 ) == 0.7 && std::isfinite( u ) && var > 0.6 && var < 1.5, false,
 		                  "the drift walk holds at dt = 0, stays finite, and has unit variance to within the sample (%.2f over %d frames)", var, n - 2000 );
 		failed += report( std::exp( model::kDriftGainPerMired * 0.0 ) == 1.0, false, "at Drift 0 the gains are exactly 1" );
+
+		//The OpenFX build's walk: replayed from the frame number, starting at
+		//most 40 time constants back. Against the walk stepped from frame 0,
+		//at both rates a timeline is likely to run, through the window's edge
+		//and an hour past it. Bit-identical inside the window (the same steps
+		//from the same start); past it, the forgotten history is below a
+		//double's rounding.
+		double replayWorst = 0.0, insideWorst = 0.0;
+		int64_t compared   = 0;
+		for( double fps : { 24.0, 60.0 } )
+		{
+			const double dt     = 1.0 / fps;
+			const int64_t edge  = static_cast< int64_t >( std::ceil( 40.0 * 20.0 * fps ) );
+			const int64_t last  = static_cast< int64_t >( 3600.0 * fps );
+			const std::set< int64_t > probes = { 1, 2, 3, 100, edge - 1, edge, edge + 1, edge + 2, 2 * edge, last / 2, last };
+			double walk = 0.0;
+			for( int64_t k = 1; k <= last; ++k )
+			{
+				walk = model::DriftStep( walk, dt, static_cast< uint32_t >( k ) );
+				if( !probes.count( k ) )
+					continue;
+				const double e = std::fabs( model::DriftWalkAt( k, dt ) - walk );
+				if( k <= edge )
+					insideWorst = std::max( insideWorst, e );
+				else
+					replayWorst = std::max( replayWorst, e );
+				++compared;
+			}
+		}
+		//The comparison can fail: the same replay from ONE time constant back
+		//is nowhere near the walk.
+		double shortWorst = 0.0;
+		{
+			const double dt    = 1.0 / 60.0;
+			const int64_t last = 216000, window = 1200;
+			double walk = 0.0, shortWalk = 0.0;
+			for( int64_t k = 1; k <= last; ++k )
+				walk = model::DriftStep( walk, dt, static_cast< uint32_t >( k ) );
+			for( int64_t k = last - window + 1; k <= last; ++k )
+				shortWalk = model::DriftStep( shortWalk, dt, static_cast< uint32_t >( k ) );
+			shortWorst = std::fabs( shortWalk - walk );
+		}
+		failed += report( insideWorst == 0.0 && replayWorst < 1e-14 && shortWorst > 1e-3, false,
+		                  "the walk replayed from the frame number is the stepped walk: bit-identical inside 800 s, %.1e apart past it (%lld frames probed at 24 and 60 fps, up to an hour in); "
+		                  "a replay from one time constant back is %.2f out",
+		                  replayWorst, static_cast< long long >( compared ), shortWorst );
+		failed += report( model::DriftWalkAt( 0, 1.0 / 60.0 ) == 0.0 && model::DriftWalkAt( -5, 1.0 / 60.0 ) == 0.0 && model::DriftWalkAt( 10, 0.0 ) == 0.0, false,
+		                  "the replayed walk is 0 at frame 0, before it, and with no frame rate" );
 	}
 	failed += report( model::OptionIndex( 2.4f, 4 ) == 2 && model::OptionIndex( -1.0f, 4 ) == 0 && model::OptionIndex( 9.0f, 4 ) == 3, false, "options map by index" );
 	return failed;
@@ -1885,6 +2263,7 @@ void usage()
 		"  --order             WB then knee compresses a warm white in R; knee-first predicts otherwise; with the knee off R clips first\n"
 		"  --skin              detail gain 1 - Skin Detail inside the hue window, 1 outside, 1 on a neutral\n"
 		"  --negative          every check above can fail\n"
+		"  --cpu               the OpenFX build's CPU copy of the two passes against the GPU, with a control that must differ\n"
 		"  --perturb BITS      run the checks verbosely against a perturbed chain (bits in Model.h)\n"
 		"\n"
 		"  checks that need no GL:\n"
@@ -1894,6 +2273,7 @@ void usage()
 		"  --allow-no-gl       with the rendering checks: SKIP loudly, not FAIL, when no GL 4.1 context exists\n"
 		"\n"
 		"  --bench             time ProcessOpenGL at 720p, 1080p and 4K\n"
+		"  --bench-cpu         time the OpenFX build's CPU chain at 720p, 1080p and 4K, and its drift replay (no GL)\n"
 		"  --dump-shaders DIR  write the exact GLSL the plugin compiles\n"
 		"  --pipe              raw RGBA frames on stdin, raw RGBA frames on stdout\n"
 		"  --script PATH       parameter cues for --pipe: 'frame Name Value'; sliders ramp, options and booleans step\n"
@@ -1914,12 +2294,13 @@ int main( int argc, char** argv )
 	double fps     = 60.0;
 	bool wantList  = false;
 	bool wantBench = false;
+	bool wantBenchCpu = false;
 	bool wantPipe  = false;
 	bool allowNoGL = false;
 	std::vector< std::string > settings;
 	std::vector< std::string > checks;
 
-	const std::set< std::string > rendered = { "--identity", "--detail", "--coring", "--knee", "--gamma", "--order", "--skin", "--negative" };
+	const std::set< std::string > rendered = { "--identity", "--detail", "--coring", "--knee", "--gamma", "--order", "--skin", "--negative", "--cpu" };
 	const std::set< std::string > offline  = { "--laws", "--names" };
 
 	for( int i = 1; i < argc; ++i )
@@ -1967,6 +2348,8 @@ int main( int argc, char** argv )
 			wantList = true;
 		else if( argument == "--bench" )
 			wantBench = true;
+		else if( argument == "--bench-cpu" )
+			wantBenchCpu = true;
 		else if( argument == "--pipe" )
 			wantPipe = true;
 		else if( argument == "--allow-no-gl" )
@@ -1992,6 +2375,10 @@ int main( int argc, char** argv )
 
 	if( !dumpDir.empty() )
 		return dumpShaders( dumpDir );
+
+	//No GL: the OpenFX build has none.
+	if( wantBenchCpu )
+		return runBenchCpu( frames == 40 ? 20 : frames );
 
 	if( wantList )
 	{
@@ -2022,7 +2409,7 @@ int main( int argc, char** argv )
 			std::printf( "\n" );
 		}
 		if( offlineRan && !needGL )
-			std::printf( "   OFFLINE: --identity, --detail, --coring, --knee, --gamma, --order, --skin and their\n"
+			std::printf( "   OFFLINE: --identity, --detail, --coring, --knee, --gamma, --order, --skin, --cpu and their\n"
 			             "   negative controls were NOT run. Nothing here drew a pixel through a GL driver;\n"
 			             "   the shaders were not exercised, only (in CI) compiled by glslc. The laws have\n"
 			             "   no negative control of their own.\n\n" );
@@ -2058,6 +2445,8 @@ int main( int argc, char** argv )
 						runSkin( width, height, perturb );
 					else if( check == "--negative" )
 						runNegative( width, height );
+					else if( check == "--cpu" )
+						runCpu( width, height, perturb );
 					else
 						continue;
 					std::printf( "\n" );
