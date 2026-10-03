@@ -1440,13 +1440,15 @@ int runSkin( int W, int H, int perturb, bool quiet = false )
 // The tolerance is NOT derived, unlike every other one in this file: the two
 // sides evaluate the same expressions in the same precision, but pow, atan
 // and division are a driver's on one side and libm's on the other, and the
-// driver is free to fuse and reassociate. 1e-5 is about six times the worst
-// seen across every case below on an M4 Max (1.6e-6, recorded in AGENTS.md),
-// and 1/400 of an 8-bit step. What it must catch -- a stage out of order, a
-// constant mistyped, a uniform read from the wrong place -- moves pixels by
-// 1e-3 and up, which the control cases at the end show the comparison seeing.
+// driver is free to fuse and reassociate. How much they differ is the
+// renderer's: the worst across every case below is 1.6e-6 on an M4 Max's GPU
+// and 6.8e-6 on a GitHub macos-14 runner's renderer (both in AGENTS.md). 2e-5
+// is three times the larger, and 1/200 of an 8-bit step. What it must catch
+// -- a stage out of order, a constant mistyped, a uniform read from the wrong
+// place -- moves pixels by 1e-3 and up, which the control cases at the end
+// show the comparison seeing.
 //---------------------------------------------------------------------------
-const double kCpuTolerance = 1e-5;
+const double kCpuTolerance = 2e-5;
 
 /// The controls as the plugin holds them, read back out of it: the CPU side
 /// is handed exactly the slider values the GPU side was.

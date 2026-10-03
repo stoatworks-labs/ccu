@@ -187,8 +187,9 @@ builds it on AlmaLinux 8 for Rocky 8's glibc.
 - **Alpha.** The chain works on straight colour in both builds. A
   premultiplied clip is divided by its alpha on the way in and multiplied back
   on the way out; at alpha 1 — every camera clip — both are exact.
-- **It runs on the CPU**, threaded through the host: about 10 ms a 1080p frame
-  on 8 threads of an M4 Max, against 0.17 ms for the GPU build. See Status.
+- **It runs on the CPU**, threaded through the host: about 15 ms a 1080p frame
+  in a host lending it 8 threads of an M4 Max, against 0.17 ms for the GPU
+  build. See Status.
 - **The detail delay is in pixels of the image the host renders**, as it is in
   pixels of Resolume's composition. A host rendering a half-resolution proxy
   gets halos twice as wide relative to the frame.
@@ -225,6 +226,7 @@ moved into `Chain.cpp` for both builds to share.
 | `--laws` (drift) | the walk replayed from the frame number is **bit-identical** to the walk stepped from frame 0, at 22 frames probed at 24 and 60 fps up to an hour in; a replay from one time constant back is 0.33 out |
 | `tools/ofx_agree.py` | the FFGL bundle's render (`cctest --pipe`, GPU) against the OpenFX bundle's (`ofxprobe`, CPU), 8-bit both sides, on the same picture: **0 of 57 600 pixels differ** at the defaults and at four settings that move every stage; the control (Detail Level 0.30 against 0.40) differs at 9 208 pixels. Also 0 differing at 1280×720 |
 | the OpenFX bundle | universal, exports `OfxGetPlugin`, `CFBundleExecutable` names the binary, ad-hoc signs; `ofxprobe` resolves `com.stoatworks.ccu` to this build, sees 23 controls in seven groups plus the About block, and renders |
+| the OpenFX build in a host | an extended `ofxprobe` (any input, any time, float depth, batches in one instance; built for this round, not yet on resolume-ofx-bridge `main`): the CCU test card through both builds at the defaults and four settings, **0 of 57 600 pixels differ** in 8-bit and in float, the control differing at 15 464; **Drift 1 at frame 300, 60 fps, rendered alone: 0 pixels differ** from the FFGL plugin's frame 300 after 300 stepped frames, while frame 0 differs from it at 52 411 and 24 fps from 60 at 17 752; frame 300 alone is byte-identical to frame 300 after 0..299 in one instance and after 299, 5, 1000, 300, 0, 300; the General context renders what the Filter context does; keyframed controls are read at the render time; a premultiplied clip with alpha 255 → 0 keeps its alpha bitwise and lands within 2/255 of the FFGL build's straight-colour picture premultiplied |
 
 Render cost, best of three runs of 60 frames after a warm-up, `glFinish`
 both sides, on a GPU shared with other builds: **0.06 ms** at 720p, **0.17
@@ -235,9 +237,10 @@ The OpenFX build on the CPU (`cctest --bench-cpu`, both passes, best of three
 runs of 20 frames): **66–71 ms** a 1080p frame on one thread, **10 ms** on 8
 threads (what `ofxprobe`'s thread suite gives it) and **8.5–8.9 ms** on all 16
 of the M4 Max's cores; 4K is 33–39 ms on 8–16 threads. The drift's replay adds
-0.54 ms a frame at 60 fps, 0.22 ms at 24. End to end through `ofxprobe` a
-1080p render is 26 ms over a 64×36 one, which includes the probe's own frame
-building and comparison. Not timed in any commercial host.
+0.54 ms a frame at 60 fps, 0.22 ms at 24. In a host (the extended `ofxprobe`,
+which lends 8 threads) the whole render action at 1080p — marshalling, the
+drift's replay an hour into a 60 fps timeline, both passes — is **14.8 ms** in
+8-bit and 14.4 ms in float, best of five. Not timed in any commercial host.
 
 Seen on footage: nine of Resolume's bundled demo clips through `--pipe` at
 the defaults, judged by eye beside the source — halos of the delay's width on
@@ -254,14 +257,14 @@ groups read in Arena's inspector on macOS is untested. The drift has not been
 watched over a minute in a host. On Windows, a CI build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29 host controls match the declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks (`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a GPU or about speed.
 
 The OpenFX build has **never been loaded into DaVinci Resolve, Vegas, Nuke or
-Natron**. It has run in `ofxprobe`, the fleet's OFX test host, which hosts the
-Filter context only, hands it 8-bit RGBA, and (stock) renders at time 0 —
-so the drift's replay has been checked inside the harness against the FFGL
-build's stepped walk, not through a host at a later frame. The Windows `.ofx`
-is built by CI and has never been run; the Linux `.ofx` is built on AlmaLinux 8
-and only dlopened on Rocky 8 in CI, never rendered. How the controls read in a
-real host's inspector, and how 16-bit and float clips and premultiplied alpha
-come through one, is untested. There is a
+Natron**. It has run in `ofxprobe`, the fleet's OFX test host, stock and
+extended: Filter and General contexts, 8-bit and float RGBA, any frame, full
+frames at render scale 1. Nothing has handed it a 16-bit clip, a tile, a proxy
+render scale or an RGB-only clip. The Windows `.ofx` is built by CI and has
+never been run; the Linux `.ofx` is built on AlmaLinux 8 and only dlopened on
+Rocky 8 in CI, never rendered. How the controls read in a real host's
+inspector, and what a real host's colour management does to the clip before
+the chain sees it, are untested. There is a
 [user guide](https://stoatworks-labs.com/software/ccu/guide/) and a browser
 demo at [ccu-demo.stoatworks-labs.com](https://ccu-demo.stoatworks-labs.com/),
 which is a port of the shaders rather than the plugin.

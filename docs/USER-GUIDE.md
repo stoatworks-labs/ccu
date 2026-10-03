@@ -343,8 +343,8 @@ about 1/2,500 of an 8-bit step). What differs:
 - **Alpha.** The chain works on straight colour, as it does in Resolume. A premultiplied clip is
   divided by its alpha on the way in and multiplied back on the way out, which changes nothing on an
   opaque clip.
-- **It runs on the CPU**: about 10 ms for a 1080p frame on 8 threads of an Apple M4 Max (see
-  Performance), against a fraction of a millisecond on the GPU in Resolume.
+- **It runs on the CPU**: about 15 ms for a 1080p frame in a host lending it 8 threads of an Apple
+  M4 Max (see Performance), against a fraction of a millisecond on the GPU in Resolume.
 - **The detail delay is in pixels of the image the host renders.** A host rendering a half-resolution
   proxy gets halos twice as wide relative to the frame — as a camera of half the resolution would.
 
@@ -376,9 +376,11 @@ The OpenFX build renders on the CPU. On the same machine, both passes at the def
 | 1920×1080 | 66–71 ms | 10 ms | 8.5–8.9 ms |
 | 3840×2160 | 274 ms | 39 ms | 33 ms |
 
-The host decides how many threads it lends. Replaying the drift adds about 0.5 ms a frame at 60 fps
-and 0.2 ms at 24, wherever on the timeline the frame is. Memory is two float copies of the frame: 66
-MB at 1080p. Not timed inside Resolve or any other commercial host.
+The host decides how many threads it lends. In the fleet's test host, which lends 8, a whole 1080p
+render — converting the host's pixels in and out, replaying the drift, both passes — is about 15 ms,
+in 8-bit or float. Replaying the drift is about 0.5 ms of that at 60 fps (0.2 ms at 24), wherever on
+the timeline the frame is. Memory is two float copies of the frame: 66 MB at 1080p. Not timed inside
+Resolve or any other commercial host.
 
 ---
 
@@ -440,9 +442,10 @@ failed to compile if one did, and a buffer that could not be allocated.
   and the drift has never been watched over a minute in a host.
 - **No audio input and no presets**, in either build.
 - **The OpenFX build has never been loaded into Resolve, Vegas, Nuke or Natron.** It has only run
-  in the fleet's own OFX test host, on 8-bit pictures at frame 0, where it matches the Resolume
-  build byte for byte; its Windows build has never been run, and its Linux build has only been
-  loaded, not rendered.
+  in the fleet's own OFX test host — 8-bit and float, at frame 0 and at frame 300 of a drifting
+  clip, alone and in sequence — where it matches the Resolume build byte for byte. It has never
+  been handed a 16-bit clip, a proxy resolution or a real host's colour management; its Windows
+  build has never been run, and its Linux build has only been loaded, not rendered.
 - **Only ever run on an Apple M4 Max and on win-lab's software renderer**, although the macOS
   build contains an Intel slice. On Windows, see the note at the top of this guide.
 - **There is a browser demo** at [ccu-demo.stoatworks-labs.com](https://ccu-demo.stoatworks-labs.com).

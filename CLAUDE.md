@@ -123,8 +123,9 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
   clips at the defaults, and the release video), judged by eye.
 - **Windows**: gated in Resolume Arena 7.27.1 on win-lab (Mesa llvmpipe, no GPU): 9/9, all 24 valued controls live. Never run on a Windows GPU.
 - **The OpenFX build has never been in Resolve, Vegas, Nuke or Natron**: only
-  `ofxprobe` (Filter context, time 0, 8-bit), where it renders the FFGL build's pictures
-  byte for byte. The Windows `.ofx` is CI-built and never run; the Linux one is only
+  `ofxprobe`, stock (Filter, time 0, 8-bit) and an extended build (any frame, float,
+  General, batches), where it renders the FFGL build's pictures byte for byte, drift
+  included. The Windows `.ofx` is CI-built and never run; the Linux one is only
   dlopened on Rocky 8 in CI. Not in a release yet (after v0.1.0).
 - No factory presets, no luma knee (the knee is per channel only), no audio input. The
   browser demo (`demo/`) is a port of the shaders, not the plugin.

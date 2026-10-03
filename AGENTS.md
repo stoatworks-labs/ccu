@@ -146,9 +146,10 @@ for a change that touched no arithmetic.
 `com.stoatworks.ccu` wins. An installed copy would be probed in place of the build and
 every number would describe it, so verify.sh checks that the bundle ofxprobe reports
 is `$BUILD/CCU.ofx.bundle`. The stock probe also only ever instantiates the Filter
-context, hands the plugin 8-bit RGBA with alpha 255, and renders at time 0 — frame 0,
-where the drift is exactly zero. A later frame's drift is checked in the harness
-(`--cpu`, frame 300), not through a host.
+context, hands the plugin its own 8-bit ramp with alpha 255, and renders at time 0 —
+frame 0, where the drift is exactly zero — so `tools/ofx_agree.py` cannot see the
+drift at all. The drift at a later frame was checked with an extended probe (below)
+and is checked in the harness by `--cpu`.
 
 ### Inherited from the fleet, and all still true here
 
@@ -332,12 +333,15 @@ defaults for both builds; the FFGL constructor fills `params[]` from them.
 and `degrees` spelt out by their specification definitions, the negative-control
 perturbations included, so a perturbed chain can be compared with its perturbed copy.
 `cctest --cpu` renders the test card through the real plugin class on the GPU and
-through the copy, per channel in float. The tolerance (1e-5) is the one tolerance in
+through the copy, per channel in float. The tolerance (2e-5) is the one tolerance in
 the harness that is not derived: the two sides evaluate the same expressions in the
 same precision, but `pow`, `atan` and division are the driver's on one side and libm's
-on the other and the driver may fuse and reassociate. It is about six times the worst
-seen (1.6e-6) and 1/400 of an 8-bit step; the controls it must catch move pixels by
-1e-2.
+on the other and the driver may fuse and reassociate — so how far apart they land is
+the renderer's. The worst seen is 1.6e-6 on the M4 Max's GPU and 6.8e-6 on a GitHub
+macos-14 runner (whose renderer CI's rendered step turns out to get; it ran all 77
+checks rather than skipping). 2e-5 is three times the larger and 1/200 of an 8-bit
+step; the controls it must catch move pixels by 1e-2. The first push had 1e-5, which
+the runner passed at 0.68 of it: too close to call a margin.
 
 **The drift is replayed, not carried.** The FFGL plugin steps its Ornstein–Uhlenbeck
 walk once per frame it is handed. OFX hands frames in any order, so
@@ -464,11 +468,40 @@ build, at 320×180 and 1280×720 (identical at both unless said).
   identifier to this build and reports 37 parameters (the page, seven groups, 23
   controls, the About group, its credit and four links).
 - **`CCU_BUILD_FFGL=OFF`** configures and builds with no FFGL SDK and no GLEW.
+- **In CI** (a dispatch of both workflows on the branch, 2026-10-03): the macOS
+  universal and Windows x64 `.ofx` build and zip as `ccu-ofx-<platform>.zip`; the
+  macOS one is `x86_64 arm64`, exports `_OfxGetPlugin` and ad-hoc signs. The Linux one
+  builds on AlmaLinux 8 with its highest glibc requirement at 2.27 and NEEDED only
+  `libc`, `libm`, `libpthread` and the loader, and on a stock Rocky 8 it dlopens and
+  answers `OfxGetNumberOfPlugins -> 1`, `com.stoatworks.ccu`. ci.yml's rendered step
+  ran `--cpu` on the macos-14 runner rather than skipping it: worst 6.8e-6, controls
+  differing as locally. None of that is a render in a commercial host.
+- **In a host, at any frame** — an extended `ofxprobe` built for this round in scratch
+  space (`--in`, `--time`, `--frame-rate`, `--depth float`, `--batch` in one instance,
+  `--context general`, `--key`; not yet on resolume-ofx-bridge `main`):
+  - A CCU test card (the shape of `buildCard`) through `cctest --pipe` and through the
+    bundle: **0 of 57 600 pixels differ** at the defaults and four settings (one aimed
+    at the card's skin disc), in 8-bit and in `--depth float`; the control (Detail
+    Level 0.30 against 0.40) differs at 15 464, by up to 40/255.
+  - **The drift through a host:** Drift 1 at 60 fps, frame 300 rendered alone, against
+    the FFGL plugin's frame 300 after 300 stepped frames: **0 pixels differ**. Frame 0
+    against frame 300 differs at 52 411 pixels (up to 5/255), and 24 fps against 60 at
+    17 752, so the comparison can fail.
+  - **Determinism:** frame 300 alone is byte-identical to frame 300 rendered after
+    0..299 in one instance, and after 299, 5, 1000, 300, 0, 300.
+  - The General context renders what the Filter context does, byte for byte; a
+    keyframed Detail Level and Knee On at t = 5 render what constants at their t = 5
+    values do.
+  - **Premultiplied alpha:** the card with alpha 255 → 0 as a PNG (handed over
+    premultiplied): alpha passes bitwise, and colour lands within 2/255 of the FFGL
+    plugin's straight-colour render premultiplied by me (0 at alpha 255) — the slack is
+    8-bit premultiplied input divided back out.
 - **Cost on the CPU** (`--bench-cpu`, both passes, best of three runs of 20 frames,
   default controls): 1080p **66–71 ms** on 1 thread, **10 ms** on 8, **8.5–8.9 ms** on
-  16; 720p 29 / 4.5 / 3.8 ms; 4K 274 / 39 / 33 ms. Through `ofxprobe` (8 threads) a
-  1080p render is 26 ms over a 64×36 one, end to end, including the probe's own frame
-  building and comparison.
+  16; 720p 29 / 4.5 / 3.8 ms; 4K 274 / 39 / 33 ms. In the extended host, which lends 8
+  threads, the whole render action at 1080p (marshalling, the drift replayed an hour
+  into a 60 fps timeline, both passes) is **14.8 ms** in 8-bit and 14.4 ms in float,
+  best of five.
 
 ### Assumed, or not done
 
@@ -482,12 +515,12 @@ build, at 320×180 and 1280×720 (identical at both unless said).
 - **The drift has never been watched over a minute** in a host; its statistics are
   checked (`--laws`) and its effect at 60 frames is swept, and that is all.
 - ☠️ **The OpenFX build has never been loaded into DaVinci Resolve, Vegas, Nuke or
-  Natron.** It has run in `ofxprobe` only: Filter context, 8-bit RGBA at alpha 255,
-  time 0. The General context, 16-bit and float clips, premultiplied alpha, a later
-  frame's drift through a host, and how the controls read in a real inspector are all
-  untested in a host (the drift and float input are covered by `--cpu`). The Windows
-  `.ofx` is built by CI and never run; the Linux `.ofx` is built on AlmaLinux 8 and
-  dlopened on Rocky 8 in CI, never rendered. It is not in a release yet.
+  Natron.** It has run in `ofxprobe` only, stock and extended: full frames at render
+  scale 1, 8-bit and float RGBA. Never a 16-bit clip, an RGB-only clip, a tile, a proxy
+  render scale or a real host's colour management; how the controls read in a real
+  inspector is unknown. The Windows `.ofx` is built by CI and never run; the Linux
+  `.ofx` is built on AlmaLinux 8 and dlopened on Rocky 8 in CI, never rendered. It is
+  not in a release yet.
 - **The browser demo** is a port of the shaders with the CPU half re-implemented in
   JavaScript; nothing checks that port but a reader.
 - **Nothing has been through a show.**
