@@ -18,8 +18,10 @@
 > **never been loaded into Resolume**. It is loaded by
 > [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real FFGL host
 > and is not Resolume. The OpenFX build renders the same pictures as the FFGL
-> build byte for byte through the fleet's OFX test host, and has **never been
-> loaded into Resolve, Vegas, Nuke or Natron**. See [Status](#status).
+> build byte for byte through the fleet's OFX test host, and has **not yet
+> rendered in Resolve, Vegas, Nuke or Natron**: its first build failed every
+> frame on Resolve's Fusion page, which reports no frame rate, and the fixed
+> build has not been back. See [Status](#status).
 
 A broadcast camera's processing chain with every knob out, as an FFGL effect
 for [Resolume](https://resolume.com) Arena and Avenue — and, from the same
@@ -183,7 +185,8 @@ builds it on AlmaLinux 8 for Rocky 8's glibc.
   bit-identical to the walk stepped from frame 0 at every frame the harness
   probed, up to an hour in, and costs 0.5 ms a frame at 60 fps wherever the
   timeline starts (a replay from frame 0 would cost 2.4 ms an hour in, and
-  grow).
+  grow). **Fusion reports no frame rate; there, Drift assumes 24 fps** — still
+  one fixed picture per frame number, stepped as if the timeline ran at 24.
 - **Alpha.** The chain works on straight colour in both builds. A
   premultiplied clip is divided by its alpha on the way in and multiplied back
   on the way out; at alpha 1 — every camera clip — both are exact.
@@ -226,6 +229,7 @@ moved into `Chain.cpp` for both builds to share.
 | `--laws` (drift) | the walk replayed from the frame number is **bit-identical** to the walk stepped from frame 0, at 22 frames probed at 24 and 60 fps up to an hour in; a replay from one time constant back is 0.33 out |
 | `tools/ofx_agree.py` | the FFGL bundle's render (`cctest --pipe`, GPU) against the OpenFX bundle's (`ofxprobe`, CPU), 8-bit both sides, on the same picture: **0 of 57 600 pixels differ** at the defaults and at four settings that move every stage; the control (Detail Level 0.30 against 0.40) differs at 9 208 pixels. Also 0 differing at 1280×720 |
 | the OpenFX bundle | universal, exports `OfxGetPlugin`, `CFBundleExecutable` names the binary, ad-hoc signs; `ofxprobe` resolves `com.stoatworks.ccu` to this build, sees 23 controls in seven groups plus the About block, and renders |
+| Fusion's missing frame rate | the test host's `--quirks fusion` withholds the frame rate (and the frame range, the unmapped pair and the render-status props) as Resolve's Fusion page does: the build before the guard fails every render under it, as it failed in Fusion; the guarded build renders and is **byte-identical to the normal host at 24 fps** at eight cases (Drift 1 at frames 0, 1, 300 and 86 400, float, the General context among them), deterministic alone and in batches; in the normal host its output is unchanged |
 | the OpenFX build in a host | an extended `ofxprobe` (any input, any time, float depth, batches in one instance; built for this round, not yet on resolume-ofx-bridge `main`): the CCU test card through both builds at the defaults and four settings, **0 of 57 600 pixels differ** in 8-bit and in float, the control differing at 15 464; **Drift 1 at frame 300, 60 fps, rendered alone: 0 pixels differ** from the FFGL plugin's frame 300 after 300 stepped frames, while frame 0 differs from it at 52 411 and 24 fps from 60 at 17 752; frame 300 alone is byte-identical to frame 300 after 0..299 in one instance and after 299, 5, 1000, 300, 0, 300; the General context renders what the Filter context does; keyframed controls are read at the render time; a premultiplied clip with alpha 255 → 0 keeps its alpha bitwise and lands within 2/255 of the FFGL build's straight-colour picture premultiplied |
 
 Render cost, best of three runs of 60 frames after a warm-up, `glFinish`
@@ -256,10 +260,14 @@ headless CGL context, plus an `oxbow` load. How twenty-three controls in eight
 groups read in Arena's inspector on macOS is untested. The drift has not been
 watched over a minute in a host. On Windows, a CI build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29 host controls match the declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks (`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a GPU or about speed.
 
-The OpenFX build has **never been loaded into DaVinci Resolve, Vegas, Nuke or
-Natron**. It has run in `ofxprobe`, the fleet's OFX test host, stock and
-extended: Filter and General contexts, 8-bit and float RGBA, any frame, full
-frames at render scale 1. Nothing has handed it a 16-bit clip, a tile, a proxy
+The OpenFX build has **not yet rendered in DaVinci Resolve, Vegas, Nuke or
+Natron**. Its first build was loaded once into Resolve Studio 21.1 as a Fusion
+tool and failed every frame: Fusion reports no frame rate, and the read threw
+out of the render. That read is guarded now (24 fps when there is none), and the
+test host's Fusion mode, which withholds the same properties, renders it; the
+fixed build has not been back in Resolve. It has run in `ofxprobe`, the fleet's
+OFX test host, stock and extended: Filter and General contexts, 8-bit and float
+RGBA, any frame, full frames at render scale 1. Nothing has handed it a 16-bit clip, a tile, a proxy
 render scale or an RGB-only clip. The Windows `.ofx` is built by CI and has
 never been run; the Linux `.ofx` is built on AlmaLinux 8 and only dlopened on
 Rocky 8 in CI, never rendered. How the controls read in a real host's

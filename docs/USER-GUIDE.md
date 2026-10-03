@@ -37,7 +37,8 @@ coring.*
 > declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks.
 > Software rendering says nothing about a GPU or about speed.
 > The OpenFX build renders the same pictures as the Resolume build, byte for byte, in the fleet's
-> OFX test host; it has **never been loaded into Resolve, Vegas, Nuke or Natron**.
+> OFX test host; it has **not yet rendered in Resolve, Vegas, Nuke or Natron** — its first build
+> failed on Resolve's Fusion page, and the fixed build has not been back.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -340,6 +341,7 @@ about 1/2,500 of an 8-bit step). What differs:
   rendered, and scrubbing shows the camera as it was at that frame. It starts from no drift at frame 0
   and settles over the first minute, as the Resolume build does when the effect is added. The replay
   looks back at most 800 seconds; what it leaves out weighs less than the rounding of the number.
+  Fusion reports no frame rate; there, Drift assumes 24 fps.
 - **Alpha.** The chain works on straight colour, as it does in Resolume. A premultiplied clip is
   divided by its alpha on the way in and multiplied back on the way out, which changes nothing on an
   opaque clip.
@@ -441,8 +443,10 @@ failed to compile if one did, and a buffer that could not be allocated.
 - **The drift's mired-to-gain law is a judged constant** (0.4% per mired), not a Planckian locus,
   and the drift has never been watched over a minute in a host.
 - **No audio input and no presets**, in either build.
-- **The OpenFX build has never been loaded into Resolve, Vegas, Nuke or Natron.** It has only run
-  in the fleet's own OFX test host — 8-bit and float, at frame 0 and at frame 300 of a drifting
+- **The OpenFX build has not yet rendered in Resolve, Vegas, Nuke or Natron.** Its first build
+  failed every frame on Resolve's Fusion page, which reports no frame rate; the fixed build assumes
+  24 fps there and has not been back in Resolve. Otherwise it has only run in the fleet's own OFX
+  test host — 8-bit and float, at frame 0 and at frame 300 of a drifting
   clip, alone and in sequence — where it matches the Resolume build byte for byte. It has never
   been handed a 16-bit clip, a proxy resolution or a real host's colour management; its Windows
   build has never been run, and its Linux build has only been loaded, not rendered.

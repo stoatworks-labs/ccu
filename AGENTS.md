@@ -353,7 +353,8 @@ start at 01:00:00:00), so it starts at most `kDriftReplayTaus` = 40 time constan
 hash can make. Measured, not argued: `--laws` probes 22 frames at 24 and 60 fps up to an
 hour in, and the bounded replay is **bit-identical** to the stepped walk at every one
 (a replay from one time constant back is 0.33 out, so the probe can fail). It costs
-0.54 ms a frame at 60 fps and 0.22 ms at 24, wherever the timeline starts. And `--cpu`
+0.54 ms a frame at 60 fps and 0.22 ms at 24, wherever the timeline starts. **Fusion
+reports no frame rate; there, Drift assumes 24 fps** (below). And `--cpu`
 renders frame 300 of a 60 fps run on the GPU — the walk stepped frame by frame through
 the real clock — against the CPU copy at `DriftWalkAt( 300, 1/60 )`: the walks are 0.0
 apart and the pictures 1.8e-7. A sub-frame time belongs to the nearest frame.
@@ -381,6 +382,19 @@ as the FFGL groups are. Never rename one.
 **Nothing is FFGL-only.** No audio, no host-beat control, no event buttons, no presets:
 every control carries over, and the plugin description says that only Drift behaves
 differently.
+
+**Every host property is read as if it might be missing**, because in Resolve's
+Fusion page it is. The lead loaded the first push into Resolve Studio 21.1 as a Fusion
+tool and every frame failed: Fusion reports no `kOfxImageEffectPropFrameRate` on the
+effect or on any clip, the Support library turns the host's `kOfxStatErrUnknown` into a
+C++ exception, and the unguarded read in `framesPerSecond()` let it escape `render` as
+`kOfxStatErrMissingHostFeature`. Now each read (output clip, then source, then effect)
+is its own `try`, a value is believed only if it is positive and finite, and the
+fallback is 24 fps (Resolve's default timeline rate; nothing about a camera prefers
+another). The source's premultiplication state is guarded the same way and treated as
+premultiplied when unknown. The plugin reads no frame range, no unmapped rate or range
+and neither render-status property, and fetches only the current frame. Resolve's Edit
+page does report a frame rate.
 
 **Render scale is ignored**, as in every other OFX port in the fleet: the delay is in
 pixels of the image the host renders, so a half-resolution proxy shows halos twice as
@@ -496,6 +510,18 @@ build, at 320×180 and 1280×720 (identical at both unless said).
     premultiplied): alpha passes bitwise, and colour lands within 2/255 of the FFGL
     plugin's straight-colour render premultiplied by me (0 at alpha 255) — the slack is
     8-bit premultiplied input divided back out.
+- **Fusion's missing frame rate** (the test host's `--quirks fusion`, 2026-10-04: no
+  FrameRate on the effect or any clip, clip FrameRange [0, 0], no Unmapped pair, no
+  render-status props). The build before the guard fails every render under it with
+  `kOfxStatErrMissingHostFeature`, as Resolve's Fusion page did. The guarded build
+  renders, and equals the normal host at `--frame-rate 24` byte for byte at eight
+  cases — Drift 1 at frames 0, 1, 300 and 86 400, the defaults at 300, everything moved,
+  float, the General context; under the quirk `--frame-rate 30` changes nothing (the
+  fallback is what is used) while the normal host's 30 and 24 differ; frame 300 under
+  the quirk is byte-identical alone, after 0..299, and after an out-of-order batch. In
+  the normal host the guarded build's output hashes equal the unguarded build's at six
+  cases (8-bit, float, 24 and 60 fps, an hour in), and every result above was re-run
+  unchanged. `verify.sh` runs the quirk when `OFXHOST` names a host that has it.
 - **Cost on the CPU** (`--bench-cpu`, both passes, best of three runs of 20 frames,
   default controls): 1080p **66–71 ms** on 1 thread, **10 ms** on 8, **8.5–8.9 ms** on
   16; 720p 29 / 4.5 / 3.8 ms; 4K 274 / 39 / 33 ms. In the extended host, which lends 8
@@ -514,9 +540,12 @@ build, at 320×180 and 1280×720 (identical at both unless said).
 - **Not verified at 4K**, only benchmarked there.
 - **The drift has never been watched over a minute** in a host; its statistics are
   checked (`--laws`) and its effect at 60 frames is swept, and that is all.
-- ☠️ **The OpenFX build has never been loaded into DaVinci Resolve, Vegas, Nuke or
-  Natron.** It has run in `ofxprobe` only, stock and extended: full frames at render
-  scale 1, 8-bit and float RGBA. Never a 16-bit clip, an RGB-only clip, a tile, a proxy
+- ☠️ **The OpenFX build has not yet rendered in DaVinci Resolve, Vegas, Nuke or
+  Natron.** The lead loaded the first push into Resolve Studio 21.1 as a Fusion tool
+  and every frame failed (no frame rate there; see *The OpenFX build*). The guarded
+  build renders in the test host's `--quirks fusion` mode and has not been back in
+  Resolve. Otherwise it has run in `ofxprobe` only, stock and extended: full frames at
+  render scale 1, 8-bit and float RGBA. Never a 16-bit clip, an RGB-only clip, a tile, a proxy
   render scale or a real host's colour management; how the controls read in a real
   inspector is unknown. The Windows `.ofx` is built by CI and never run; the Linux
   `.ofx` is built on AlmaLinux 8 and dlopened on Rocky 8 in CI, never rendered. It is

@@ -33,6 +33,13 @@
 /// does when the effect is added, so the first minute of a timeline that
 /// starts at 0 is the camera warming up.
 ///
+/// **A host may report no frame rate at all**, and Resolve's Fusion page
+/// reports none -- reading one there threw out of render() and failed every
+/// frame. `framesPerSecond()` guards each read and falls back to 24 fps, so
+/// in Fusion the walk is still a deterministic function of the frame number,
+/// stepped as if the timeline ran at 24. Every other host property this file
+/// reads is guarded the same way or is one the OFX render action requires.
+///
 /// Nothing else carries across frames, so nothing else differs. There is no
 /// audio in this effect and no host-beat control, in either build.
 ///
@@ -65,6 +72,13 @@ namespace
 constexpr const char* kPluginIdentifier = "com.stoatworks.ccu";
 constexpr const char* kPluginName       = "CCU";
 constexpr const char* kPluginGrouping   = "Stoatworks";
+
+/// The frame rate the drift assumes when the host reports none. Resolve's
+/// Fusion page reports none at all; 24 is Resolve's default timeline rate.
+/// No domain reason to prefer another: the drift only needs SOME fixed dt to
+/// be a deterministic function of the frame number.
+constexpr double kFallbackFramesPerSecond = 24.0;
+
 constexpr const char* kPluginDescription =
 	"A broadcast camera's processing chain with every knob out.\n\n"
 	"Not a filter: the stages of a studio or OB camera in their fixed order, in "
@@ -79,8 +93,9 @@ constexpr const char* kPluginDescription =
 	"Every control is the Resolume build's. One behaves differently: Drift here "
 	"is a function of the frame number rather than of how long the effect has "
 	"been running, so a frame renders the same alone, in order or out of order. "
-	"It starts from no drift at frame 0 and settles over the first minute. The "
-	"detail delay is in pixels of the image the host renders.\n\n"
+	"It starts from no drift at frame 0 and settles over the first minute. "
+	"Fusion reports no frame rate; there, Drift assumes 24 fps. The detail "
+	"delay is in pixels of the image the host renders.\n\n"
 	"https://stoatworks-labs.com";
 
 //The script names. A saved project refers to these, so they are permanent.
@@ -323,7 +338,7 @@ public:
 		//An RGB clip has no alpha to be premultiplied by, and a host that says
 		//"unpremultiplied" about one is describing something that does not
 		//exist. Opaque counts as premultiplied: alpha is 1, so it is exact.
-		frame.premultiplied = comps == OFX::ePixelComponentRGBA && srcClip->getPreMultiplication() != OFX::eImageUnPreMultiplied;
+		frame.premultiplied = comps == OFX::ePixelComponentRGBA && sourcePremultiplied();
 
 		const size_t floats = static_cast< size_t >( frame.width ) * frame.height * 4;
 		frame.source.resize( floats );
@@ -420,16 +435,66 @@ private:
 		return chain::Resolve( host, model::DriftWalkAt( frameNumber, 1.0 / framesPerSecond() ) );
 	}
 
-	/// The clip's rate, for the drift's dt. A host that reports zero -- some
-	/// do for a clip with nothing connected -- would otherwise divide by it.
+	/// The frame rate, for the drift's dt: the output clip's, else the
+	/// source's, else the effect's, else kFallbackFramesPerSecond.
+	///
+	/// **Every read can fail, and in Resolve's Fusion page every one does.**
+	/// Fusion reports no kOfxImageEffectPropFrameRate at all -- not on the
+	/// effect, not on any clip -- and the Support library turns the host's
+	/// kOfxStatErrUnknown into a C++ exception. Unguarded, that escaped
+	/// render() as kOfxStatErrMissingHostFeature and Fusion failed every
+	/// frame. So each read is its own try, and a value is only believed if
+	/// it is a positive finite number (some hosts report zero for a clip
+	/// with nothing connected).
 	double framesPerSecond() const
 	{
-		double fps = srcClip != nullptr ? srcClip->getFrameRate() : 0.0;
-		if( !( fps > 0.0 ) )
+		const auto usable = []( double v ) { return std::isfinite( v ) && v > 0.0; };
+		double fps = 0.0;
+		try
+		{
 			fps = dstClip->getFrameRate();
-		if( !( fps > 0.0 ) )
-			fps = 25.0;
-		return fps;
+		}
+		catch( ... )
+		{
+			fps = 0.0;
+		}
+		if( usable( fps ) )
+			return fps;
+		try
+		{
+			fps = srcClip != nullptr ? srcClip->getFrameRate() : 0.0;
+		}
+		catch( ... )
+		{
+			fps = 0.0;
+		}
+		if( usable( fps ) )
+			return fps;
+		try
+		{
+			fps = getFrameRate();
+		}
+		catch( ... )
+		{
+			fps = 0.0;
+		}
+		return usable( fps ) ? fps : kFallbackFramesPerSecond;
+	}
+
+	/// Whether the source clip says its colour is premultiplied. Guarded for
+	/// the same reason as the frame rate: a property a host leaves out must
+	/// not fail the render. Unknown counts as premultiplied, OFX's default
+	/// for RGBA, and on an opaque clip the two are the same picture.
+	bool sourcePremultiplied() const
+	{
+		try
+		{
+			return srcClip->getPreMultiplication() != OFX::eImageUnPreMultiplied;
+		}
+		catch( ... )
+		{
+			return true;
+		}
 	}
 
 	OFX::Clip* dstClip = nullptr;

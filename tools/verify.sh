@@ -68,7 +68,10 @@
 #                 the identifier, loads it and renders; and the FFGL and OFX
 #                 builds render the same picture byte for byte through their
 #                 real entry points (tools/ofx_agree.py), with a control case
-#                 that must differ.
+#                 that must differ. With OFXHOST set to a test host that has
+#                 `--quirks fusion`: the bundle renders with no frame rate (as
+#                 Resolve's Fusion page gives it none) and equals the 24 fps
+#                 render.
 #
 set -uo pipefail
 
@@ -380,6 +383,42 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$OFXB" ]; then
 	else
 		printf '   skipped: ofxprobe not built (../resolume-ofx-bridge) -- the OpenFX render is unchecked\n'
 	fi
+
+	#-----------------------------------------------------------------------
+	# Resolve's Fusion page reports no frame rate at all -- not on the effect,
+	# not on any clip -- and the first build's unguarded read threw out of
+	# render() and failed every frame there. A test host with `--quirks
+	# fusion` withholds the same properties. Under it the plugin must render,
+	# and render exactly what the normal host does at the 24 fps fallback,
+	# at a frame where the drift has moved (frame 300, Drift 1). The stock
+	# ofxprobe has no quirks mode: point OFXHOST at one that does.
+	#-----------------------------------------------------------------------
+	step "openfx under Fusion's missing frame rate"
+	QHOST="${OFXHOST:-${OFXPROBE:-}}"
+	qhelp=""
+	[ -n "$QHOST" ] && [ -x "$QHOST" ] && qhelp=$("$QHOST" --help 2>&1)
+	case "$qhelp" in
+		*"--quirks"*)
+			quirked=$("$QHOST" --no-system-dirs --dir "$BUILD" --render com.stoatworks.ccu --size 320x180 \
+			          --quirks fusion --set drift=1 --time 300 2>&1)
+			normal=$("$QHOST" --no-system-dirs --dir "$BUILD" --render com.stoatworks.ccu --size 320x180 \
+			         --frame-rate 24 --set drift=1 --time 300 2>&1)
+			other=$("$QHOST" --no-system-dirs --dir "$BUILD" --render com.stoatworks.ccu --size 320x180 \
+			        --frame-rate 30 --set drift=1 --time 300 2>&1)
+			qhash=$(printf '%s\n' "$quirked" | sed -n 's/.*out hash *fnv1a64 \([0-9a-f]*\).*/\1/p')
+			nhash=$(printf '%s\n' "$normal" | sed -n 's/.*out hash *fnv1a64 \([0-9a-f]*\).*/\1/p')
+			ohash=$(printf '%s\n' "$other" | sed -n 's/.*out hash *fnv1a64 \([0-9a-f]*\).*/\1/p')
+			if [ -z "$qhash" ]; then
+				fail "the OpenFX bundle does not render under --quirks fusion"
+				printf '%s\n' "$quirked" | grep -iE 'fail|status' | sed 's/^/      /'
+			elif [ "$qhash" = "$nhash" ] && [ -n "$ohash" ] && [ "$ohash" != "$nhash" ]; then
+				pass "renders with no frame rate, and is the 24 fps render exactly (frame 300, Drift 1: $qhash; 30 fps differs)"
+			else
+				fail "under --quirks fusion: $qhash, the normal host at 24 fps: $nhash, at 30: $ohash"
+			fi ;;
+		*)
+			printf '   skipped: no test host with --quirks (set OFXHOST to one) -- Fusion'"'"'s missing frame rate is unchecked\n' ;;
+	esac
 fi
 
 printf '\n'
