@@ -3,7 +3,10 @@ name: ci
 # Both platforms on every push and pull request, so a Dependabot bump has a
 # status check to gate on and a GLEW-shaped break -- which macOS is
 # structurally blind to, because macOS never links GLEW -- is caught before a
-# tag. There is no Linux job: the CMakeLists branches on APPLE and WIN32.
+# tag. Both build the OpenFX plugin too (BUILD_OFX is on by default). There
+# is no Linux job here: the FFGL half has no Linux path, and the OpenFX
+# plugin's Linux build and load test live in release.yml, which a dispatch
+# runs without publishing.
 on:
   push:
     branches: [main]
@@ -69,7 +72,35 @@ jobs:
         timeout-minutes: 25
         run: >
           ./build/cctest --identity --detail --coring --knee --gamma --order --skin
-          --negative --size 320x180 --allow-no-gl
+          --negative --cpu --size 320x180 --allow-no-gl
+
+      - name: OpenFX CPU chain
+        # --cpu above holds the OpenFX build's CPU copy of the two passes to
+        # the GPU, and on a runner with no GL it SKIPs. This at least runs
+        # that copy -- both passes, every resolution, threaded -- so a crash
+        # or a hang in it cannot reach a tag. The numbers are a runner's and
+        # mean nothing.
+        timeout-minutes: 10
+        run: ./build/cctest --bench-cpu --frames 2
+
+      - name: OpenFX bundle
+        # The bundle names its own binary in Info.plist, exports the OFX entry
+        # point, and signs. The first is a release-time codesign failure with
+        # no local symptom at all -- see cmake/InfoOFX.plist.in. Captured and
+        # matched rather than piped into grep -q, which fails under pipefail
+        # when grep FINDS its match.
+        run: |
+          bundle=build/CCU.ofx.bundle
+          named=$(/usr/libexec/PlistBuddy -c "Print :CFBundleExecutable" "$bundle/Contents/Info.plist")
+          test -f "$bundle/Contents/MacOS/$named"
+          echo "CFBundleExecutable is $named, and it is there"
+          syms=$(nm -gU "$bundle/Contents/MacOS/$named")
+          case "$syms" in
+            *_OfxGetPlugin*) echo "exports OfxGetPlugin" ;;
+            *) echo "no _OfxGetPlugin in $named"; exit 1 ;;
+          esac
+          cp -R "$bundle" "$RUNNER_TEMP/"
+          codesign --force --sign - --timestamp=none "$RUNNER_TEMP/CCU.ofx.bundle"
 
       - name: Controls
         # At 160x90 and two at a time, because a software rasteriser is slow
@@ -77,6 +108,7 @@ jobs:
         timeout-minutes: 25
         run: python3 tools/sweep.py --binary build/cctest --size 160x90 --jobs 2 --allow-no-gl
 
+      # build/*.bundle takes CCU.ofx.bundle as well as the FFGL CCU.bundle.
       - uses: actions/upload-artifact@v7
         with:
           name: ccu-macos-arm64
@@ -104,8 +136,19 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
+      - name: OpenFX plugin
+        # Win64 output directories are pinned in CMakeLists.txt; a multi-config
+        # generator otherwise drops the .ofx under Release/ and the bundle is
+        # empty while the build reports success.
+        shell: bash
+        run: |
+          test -f build/CCU.ofx.bundle/Contents/Win64/CCU.ofx
+          ls -l build/CCU.ofx.bundle/Contents/Win64
+
       - uses: actions/upload-artifact@v7
         with:
           name: ccu-windows-x86_64
-          path: build/Release/*.dll
+          path: |
+            build/Release/*.dll
+            build/CCU.ofx.bundle/Contents/Win64/CCU.ofx
           if-no-files-found: error
