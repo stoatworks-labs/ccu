@@ -52,15 +52,16 @@ a cue sheet) over Resolume's bundled demo clips, not captured from Resolume.*
 
 ## Download
 
-**[v0.1.0](https://github.com/stoatworks-labs/ccu/releases/tag/v0.1.0)** — prebuilt for macOS and Windows. Pick your platform:
+**[v0.2.0](https://github.com/stoatworks-labs/ccu/releases/tag/v0.2.0)** — prebuilt for macOS, Windows and Linux. Pick your platform:
 
 <details>
 <summary><b>macOS</b> — Universal (Apple Silicon + Intel)</summary>
 
 | Build | Download | Size |
 | --- | --- | --- |
-| Universal (Apple Silicon + Intel) · .dmg disk image | [`ccu-0.1.0-macos-universal.dmg`](https://github.com/stoatworks-labs/ccu/releases/download/v0.1.0/ccu-0.1.0-macos-universal.dmg) | 204 KB |
-| Universal (Apple Silicon + Intel) · .zip archive | [`ccu-macos-universal.zip`](https://github.com/stoatworks-labs/ccu/releases/latest/download/ccu-macos-universal.zip) | 167 KB |
+| Universal (Apple Silicon + Intel) · .dmg disk image | [`ccu-0.2.0-macos-universal.dmg`](https://github.com/stoatworks-labs/ccu/releases/download/v0.2.0/ccu-0.2.0-macos-universal.dmg) | 214 KB |
+| Universal (Apple Silicon + Intel) · .zip archive | [`ccu-macos-universal.zip`](https://github.com/stoatworks-labs/ccu/releases/latest/download/ccu-macos-universal.zip) | 171 KB |
+| Universal (Apple Silicon + Intel) · .zip archive (OpenFX — Resolve, Vegas, Nuke) | [`ccu-ofx-macos-universal.zip`](https://github.com/stoatworks-labs/ccu/releases/latest/download/ccu-ofx-macos-universal.zip) | 244 KB |
 
 </details>
 
@@ -69,8 +70,18 @@ a cue sheet) over Resolume's bundled demo clips, not captured from Resolume.*
 
 | Build | Download | Size |
 | --- | --- | --- |
-| x64 · .exe installer | [`ccu-0.1.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/ccu/releases/download/v0.1.0/ccu-0.1.0-windows-x86_64-setup.exe) | 218 KB |
+| x64 · .exe installer | [`ccu-0.2.0-windows-x86_64-setup.exe`](https://github.com/stoatworks-labs/ccu/releases/download/v0.2.0/ccu-0.2.0-windows-x86_64-setup.exe) | 223 KB |
 | x64 · .zip archive | [`ccu-windows-x86_64.zip`](https://github.com/stoatworks-labs/ccu/releases/latest/download/ccu-windows-x86_64.zip) | 111 KB |
+| x64 · .zip archive (OpenFX — Resolve, Vegas, Nuke) | [`ccu-ofx-windows-x86_64.zip`](https://github.com/stoatworks-labs/ccu/releases/latest/download/ccu-ofx-windows-x86_64.zip) | 71 KB |
+
+</details>
+
+<details>
+<summary><b>Linux</b> — x64</summary>
+
+| Build | Download | Size |
+| --- | --- | --- |
+| x64 · .zip archive (OpenFX — Resolve, Vegas, Nuke) | [`ccu-ofx-linux-x86_64.zip`](https://github.com/stoatworks-labs/ccu/releases/latest/download/ccu-ofx-linux-x86_64.zip) | 709 KB |
 
 </details>
 
