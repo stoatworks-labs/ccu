@@ -19,7 +19,8 @@ edge; the top of the ramp has gone through the knee; the hair on the skin disc i
 weave on the jacket because of the skin window; the floor's fine texture is left alone by the
 coring.*
 
-> **Before you rely on this:** released at **v0.1.0**, and honestly early. The chain is measured
+> **Before you rely on this:** released at **v0.2.0**, which adds the OpenFX build, and honestly
+> early. The chain is measured
 > rather than asserted, by a harness that drives the real plugin class and reads each claim back
 > out of the picture it made, at two rasters: every stage at its null returns the input within a
 > bound derived from the OETF round trip in float, alpha bitwise, and again after a resize; a step's
@@ -37,8 +38,9 @@ coring.*
 > declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks.
 > Software rendering says nothing about a GPU or about speed.
 > The OpenFX build renders the same pictures as the Resolume build, byte for byte, in the fleet's
-> OFX test host; it has **not yet rendered in Resolve, Vegas, Nuke or Natron** — its first build
-> failed on Resolve's Fusion page, and the fixed build has not been back.
+> OFX test host, and in DaVinci Resolve Studio 21.1 on macOS it renders as a Fusion tool and
+> matches that test host to within 1/255. It has **never been run in Vegas, Nuke or Natron**, and
+> its Windows and Linux builds have never rendered in a host.
 > Try it on a spare layer before you put it in a show.
 >
 > This codebase was created with AI assistance, directed and reviewed by a human author.
@@ -65,7 +67,7 @@ SmartScreen once: **More info** → **Run anyway**.
 ### Installing the OpenFX build
 
 The OpenFX build is a separate download, `ccu-ofx-<platform>.zip`, for macOS (universal), Windows
-(x64) and Linux (x86_64). It is not in v0.1.0; it arrives with the next release. Copy
+(x64) and Linux (x86_64). It ships from v0.2.0. Copy
 `CCU.ofx.bundle` from the zip into the standard OpenFX folder and restart the host:
 
 ```
@@ -443,13 +445,15 @@ failed to compile if one did, and a buffer that could not be allocated.
 - **The drift's mired-to-gain law is a judged constant** (0.4% per mired), not a Planckian locus,
   and the drift has never been watched over a minute in a host.
 - **No audio input and no presets**, in either build.
-- **The OpenFX build has not yet rendered in Resolve, Vegas, Nuke or Natron.** Its first build
-  failed every frame on Resolve's Fusion page, which reports no frame rate; the fixed build assumes
-  24 fps there and has not been back in Resolve. Otherwise it has only run in the fleet's own OFX
+- **The OpenFX build has rendered in one real host: DaVinci Resolve Studio 21.1 on macOS, as a
+  Fusion tool**, where it matches the fleet's test host to within 1/255. Its first build failed
+  every frame on Resolve's Fusion page, which reports no frame rate; the fixed build assumes 24 fps
+  there. Only the Fusion page has been tried, and it has never been run in Vegas, Nuke or Natron.
+  Otherwise it has only run in the fleet's own OFX
   test host — 8-bit and float, at frame 0 and at frame 300 of a drifting
   clip, alone and in sequence — where it matches the Resolume build byte for byte. It has never
-  been handed a 16-bit clip, a proxy resolution or a real host's colour management; its Windows
-  build has never been run, and its Linux build has only been loaded, not rendered.
+  been handed a 16-bit clip or a proxy resolution, and what a real host's colour management does to
+  the clip is untested; its Windows build has never been run, and its Linux build has only been loaded, not rendered.
 - **Only ever run on an Apple M4 Max and on win-lab's software renderer**, although the macOS
   build contains an Intel slice. On Windows, see the note at the top of this guide.
 - **There is a browser demo** at [ccu-demo.stoatworks-labs.com](https://ccu-demo.stoatworks-labs.com).

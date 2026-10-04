@@ -18,10 +18,10 @@
 > **never been loaded into Resolume**. It is loaded by
 > [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real FFGL host
 > and is not Resolume. The OpenFX build renders the same pictures as the FFGL
-> build byte for byte through the fleet's OFX test host, and has **not yet
-> rendered in Resolve, Vegas, Nuke or Natron**: its first build failed every
-> frame on Resolve's Fusion page, which reports no frame rate, and the fixed
-> build has not been back. See [Status](#status).
+> build byte for byte through the fleet's OFX test host, and in DaVinci
+> Resolve Studio 21.1 on macOS it renders as a Fusion tool and matches that
+> test host to within 1/255. It has **never been run in Vegas, Nuke or
+> Natron**. See [Status](#status).
 
 A broadcast camera's processing chain with every knob out, as an FFGL effect
 for [Resolume](https://resolume.com) Arena and Avenue — and, from the same
@@ -154,9 +154,9 @@ of each to float — is one function both builds call (`Chain.cpp`), and the
 two GLSL passes are restated statement for statement on the CPU
 (`CpuChain.cpp`) and held to the GPU per pixel by the harness.
 
-The OpenFX build is on `main` and not yet in a release; when it is, each
-release carries `ccu-ofx-macos-universal.zip`, `ccu-ofx-windows-x86_64.zip`
-and `ccu-ofx-linux-x86_64.zip`. Copy `CCU.ofx.bundle` from the zip into the
+The OpenFX build ships from v0.2.0: each release carries
+`ccu-ofx-macos-universal.zip`, `ccu-ofx-windows-x86_64.zip` and
+`ccu-ofx-linux-x86_64.zip`. Copy `CCU.ofx.bundle` from the zip into the
 standard OpenFX folder and restart the host:
 
 ```
@@ -203,7 +203,9 @@ either build.
 
 ## Status
 
-**v0.1.0, released 2026-09-24, and honestly early.** Verified by
+**v0.2.0, and honestly early.** v0.1.0 (released 2026-09-24) was the
+Resolume build alone; v0.2.0 adds the OpenFX build and leaves the Resolume
+build's pictures unchanged. Verified by
 measurement on an M4 Max, macOS 26.4, at 320×180 and 1280×720, on a fresh
 universal build. Never loaded into Resolume on macOS. The OpenFX build came
 after v0.1.0 (2026-10-03); its rows below are `tools/verify.sh` on the same
@@ -231,6 +233,7 @@ moved into `Chain.cpp` for both builds to share.
 | the OpenFX bundle | universal, exports `OfxGetPlugin`, `CFBundleExecutable` names the binary, ad-hoc signs; `ofxprobe` resolves `com.stoatworks.ccu` to this build, sees 23 controls in seven groups plus the About block, and renders |
 | Fusion's missing frame rate | the test host's `--quirks fusion` withholds the frame rate (and the frame range, the unmapped pair and the render-status props) as Resolve's Fusion page does: the build before the guard fails every render under it, as it failed in Fusion; the guarded build renders and is **byte-identical to the normal host at 24 fps** at eight cases (Drift 1 at frames 0, 1, 300 and 86 400, float, the General context among them), deterministic alone and in batches; in the normal host its output is unchanged |
 | the OpenFX build in a host | an extended `ofxprobe` (any input, any time, float depth, batches in one instance; built for this round, not yet on resolume-ofx-bridge `main`): the CCU test card through both builds at the defaults and four settings, **0 of 57 600 pixels differ** in 8-bit and in float, the control differing at 15 464; **Drift 1 at frame 300, 60 fps, rendered alone: 0 pixels differ** from the FFGL plugin's frame 300 after 300 stepped frames, while frame 0 differs from it at 52 411 and 24 fps from 60 at 17 752; frame 300 alone is byte-identical to frame 300 after 0..299 in one instance and after 299, 5, 1000, 300, 0, 300; the General context renders what the Filter context does; keyframed controls are read at the render time; a premultiplied clip with alpha 255 → 0 keeps its alpha bitwise and lands within 2/255 of the FFGL build's straight-colour picture premultiplied |
+| DaVinci Resolve | Resolve Studio 21.1 on macOS, 2026-10-04: the guarded build, added as a Fusion tool on the Fusion page, renders and **matches the test host to within 1/255** (the build before the guard failed every frame there) |
 
 Render cost, best of three runs of 60 frames after a warm-up, `glFinish`
 both sides, on a GPU shared with other builds: **0.06 ms** at 720p, **0.17
@@ -260,12 +263,15 @@ headless CGL context, plus an `oxbow` load. How twenty-three controls in eight
 groups read in Arena's inspector on macOS is untested. The drift has not been
 watched over a minute in a host. On Windows, a CI build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29 host controls match the declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks (`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a GPU or about speed.
 
-The OpenFX build has **not yet rendered in DaVinci Resolve, Vegas, Nuke or
-Natron**. Its first build was loaded once into Resolve Studio 21.1 as a Fusion
+The OpenFX build has **never been run in Vegas, Nuke or Natron**. In DaVinci
+Resolve its first build was loaded once into Resolve Studio 21.1 as a Fusion
 tool and failed every frame: Fusion reports no frame rate, and the read threw
 out of the render. That read is guarded now (24 fps when there is none), and the
-test host's Fusion mode, which withholds the same properties, renders it; the
-fixed build has not been back in Resolve. It has run in `ofxprobe`, the fleet's
+test host's Fusion mode, which withholds the same properties, renders it; on
+2026-10-04 the guarded build rendered in Resolve Studio 21.1 on macOS as a
+Fusion tool and matched the test host to within 1/255. That is the only real
+host it has rendered in, and the Fusion page the only place in Resolve it has
+been tried. It has run in `ofxprobe`, the fleet's
 OFX test host, stock and extended: Filter and General contexts, 8-bit and float
 RGBA, any frame, full frames at render scale 1. Nothing has handed it a 16-bit clip, a tile, a proxy
 render scale or an RGB-only clip. The Windows `.ofx` is built by CI and has

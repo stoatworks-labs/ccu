@@ -522,6 +522,9 @@ build, at 320×180 and 1280×720 (identical at both unless said).
   the normal host the guarded build's output hashes equal the unguarded build's at six
   cases (8-bit, float, 24 and 60 fps, an hour in), and every result above was re-run
   unchanged. `verify.sh` runs the quirk when `OFXHOST` names a host that has it.
+- **In DaVinci Resolve Studio 21.1** (macOS, 2026-10-04, by the lead): the guarded
+  build, added as a Fusion tool on the Fusion page, renders, and its output matches
+  the test host's to within 1/255. The Edit and Color pages were not tried.
 - **Cost on the CPU** (`--bench-cpu`, both passes, best of three runs of 20 frames,
   default controls): 1080p **66–71 ms** on 1 thread, **10 ms** on 8, **8.5–8.9 ms** on
   16; 720p 29 / 4.5 / 3.8 ms; 4K 274 / 39 / 33 ms. In the extended host, which lends 8
@@ -540,16 +543,18 @@ build, at 320×180 and 1280×720 (identical at both unless said).
 - **Not verified at 4K**, only benchmarked there.
 - **The drift has never been watched over a minute** in a host; its statistics are
   checked (`--laws`) and its effect at 60 frames is swept, and that is all.
-- ☠️ **The OpenFX build has not yet rendered in DaVinci Resolve, Vegas, Nuke or
-  Natron.** The lead loaded the first push into Resolve Studio 21.1 as a Fusion tool
-  and every frame failed (no frame rate there; see *The OpenFX build*). The guarded
-  build renders in the test host's `--quirks fusion` mode and has not been back in
-  Resolve. Otherwise it has run in `ofxprobe` only, stock and extended: full frames at
-  render scale 1, 8-bit and float RGBA. Never a 16-bit clip, an RGB-only clip, a tile, a proxy
-  render scale or a real host's colour management; how the controls read in a real
-  inspector is unknown. The Windows `.ofx` is built by CI and never run; the Linux
-  `.ofx` is built on AlmaLinux 8 and dlopened on Rocky 8 in CI, never rendered. It is
-  not in a release yet.
+- **The OpenFX build has rendered in one real host: DaVinci Resolve Studio 21.1 on
+  macOS, as a Fusion tool.** The lead loaded the first push into Resolve as a Fusion
+  tool and every frame failed (no frame rate there; see *The OpenFX build*). The
+  guarded build renders in the test host's `--quirks fusion` mode, and on 2026-10-04
+  the lead loaded it into Resolve again as a Fusion tool: it renders and matches the
+  test host to within 1/255. Only the Fusion page has been tried; ☠️ never Vegas,
+  Nuke or Natron. Otherwise it has run in `ofxprobe` only, stock and extended: full frames at
+  render scale 1, 8-bit and float RGBA. Never a 16-bit clip, an RGB-only clip, a tile or a proxy
+  render scale; what a real host's colour management does to the clip, and how the
+  controls read in a real inspector, are unknown. The Windows `.ofx` is built by CI and never run; the Linux
+  `.ofx` is built on AlmaLinux 8 and dlopened on Rocky 8 in CI, never rendered. It
+  ships from v0.2.0.
 - **The browser demo** is a port of the shaders with the CPU half re-implemented in
   JavaScript; nothing checks that port but a reader.
 - **Nothing has been through a show.**
