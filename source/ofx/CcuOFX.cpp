@@ -33,12 +33,14 @@
 /// does when the effect is added, so the first minute of a timeline that
 /// starts at 0 is the camera warming up.
 ///
-/// **A host may report no frame rate at all**, and Resolve's Fusion page
-/// reports none -- reading one there threw out of render() and failed every
-/// frame. `framesPerSecond()` guards each read and falls back to 24 fps, so
-/// in Fusion the walk is still a deterministic function of the frame number,
-/// stepped as if the timeline ran at 24. Every other host property this file
-/// reads is guarded the same way or is one the OFX render action requires.
+/// **A host may leave a frame rate out**, and Resolve's Fusion page reports
+/// one on the effect but none on its clips -- reading a clip's there threw out
+/// of render() and failed every frame. `framesPerSecond()` guards each read,
+/// clips first, then the effect, so in Fusion the walk steps at the effect's
+/// rate, the timeline's. Only a host that reports no rate anywhere gets the
+/// 24 fps fallback, stepped as if the timeline ran at 24. Every other host
+/// property this file reads is guarded the same way or is one the OFX render
+/// action requires.
 ///
 /// Nothing else carries across frames, so nothing else differs. There is no
 /// audio in this effect and no host-beat control, in either build.
@@ -73,8 +75,9 @@ constexpr const char* kPluginIdentifier = "com.stoatworks.ccu";
 constexpr const char* kPluginName       = "CCU";
 constexpr const char* kPluginGrouping   = "Stoatworks";
 
-/// The frame rate the drift assumes when the host reports none. Resolve's
-/// Fusion page reports none at all; 24 is Resolve's default timeline rate.
+/// The frame rate the drift assumes when the host reports none, on a clip or
+/// on the effect. (Resolve's Fusion page leaves it off the clips but reports
+/// the effect's.) 24 is Resolve's default timeline rate.
 /// No domain reason to prefer another: the drift only needs SOME fixed dt to
 /// be a deterministic function of the frame number.
 constexpr double kFallbackFramesPerSecond = 24.0;
@@ -94,8 +97,10 @@ constexpr const char* kPluginDescription =
 	"is a function of the frame number rather than of how long the effect has "
 	"been running, so a frame renders the same alone, in order or out of order. "
 	"It starts from no drift at frame 0 and settles over the first minute. "
-	"Fusion reports no frame rate; there, Drift assumes 24 fps. The detail "
-	"delay is in pixels of the image the host renders.\n\n"
+	"Resolve's Fusion page reports the frame rate on the effect but not on its "
+	"clips; Drift reads the effect's, and assumes 24 fps only where a host "
+	"reports none. The detail delay is in pixels of the image the host "
+	"renders.\n\n"
 	"https://stoatworks-labs.com";
 
 //The script names. A saved project refers to these, so they are permanent.
@@ -455,14 +460,15 @@ private:
 	/// The frame rate, for the drift's dt: the output clip's, else the
 	/// source's, else the effect's, else kFallbackFramesPerSecond.
 	///
-	/// **Every read can fail, and in Resolve's Fusion page every one does.**
-	/// Fusion reports no kOfxImageEffectPropFrameRate at all -- not on the
-	/// effect, not on any clip -- and the Support library turns the host's
-	/// kOfxStatErrUnknown into a C++ exception. Unguarded, that escaped
-	/// render() as kOfxStatErrMissingHostFeature and Fusion failed every
-	/// frame. So each read is its own try, and a value is only believed if
-	/// it is a positive finite number (some hosts report zero for a clip
-	/// with nothing connected).
+	/// **Every read can fail, and in Resolve's Fusion page the clips' do.**
+	/// Fusion reports kOfxImageEffectPropFrameRate on the effect (the
+	/// timeline's rate) but on neither clip, and the Support library turns
+	/// the host's kOfxStatErrUnknown into a C++ exception. Unguarded, a
+	/// clip's read escaped render() as kOfxStatErrMissingHostFeature and
+	/// Fusion failed every frame. So each read is its own try, and a value is
+	/// only believed if it is a positive finite number (some hosts report
+	/// zero for a clip with nothing connected). In Fusion the effect's read
+	/// answers; the fallback is for a host that reports no rate anywhere.
 	double framesPerSecond() const
 	{
 		const auto usable = []( double v ) { return std::isfinite( v ) && v > 0.0; };

@@ -69,9 +69,9 @@
 #                 builds render the same picture byte for byte through their
 #                 real entry points (tools/ofx_agree.py), with a control case
 #                 that must differ. With OFXHOST set to a test host that has
-#                 `--quirks fusion`: the bundle renders with no frame rate (as
-#                 Resolve's Fusion page gives it none) and equals the 24 fps
-#                 render.
+#                 `--quirks fusion`: the bundle renders with no frame rate
+#                 anywhere (stricter than Resolve's Fusion page, which gives
+#                 the effect one) and equals the 24 fps render.
 #
 set -uo pipefail
 
@@ -400,15 +400,16 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$OFXB" ]; then
 	fi
 
 	#-----------------------------------------------------------------------
-	# Resolve's Fusion page reports no frame rate at all -- not on the effect,
-	# not on any clip -- and the first build's unguarded read threw out of
+	# Resolve's Fusion page reports the frame rate on the effect but not on
+	# its clips, and the first build's unguarded clip read threw out of
 	# render() and failed every frame there. A test host with `--quirks
-	# fusion` withholds the same properties. Under it the plugin must render,
-	# and render exactly what the normal host does at the 24 fps fallback,
-	# at a frame where the drift has moved (frame 300, Drift 1). The stock
-	# ofxprobe has no quirks mode: point OFXHOST at one that does.
+	# fusion` is stricter than Fusion: it withholds the effect's rate too.
+	# Under it the plugin must render, and render exactly what the normal
+	# host does at the 24 fps fallback, at a frame where the drift has moved
+	# (frame 300, Drift 1). The stock ofxprobe has no quirks mode: point
+	# OFXHOST at one that does.
 	#-----------------------------------------------------------------------
-	step "openfx under Fusion's missing frame rate"
+	step "openfx under a host with no frame rate (--quirks fusion)"
 	QHOST="${OFXHOST:-${OFXPROBE:-}}"
 	qhelp=""
 	[ -n "$QHOST" ] && [ -x "$QHOST" ] && qhelp=$("$QHOST" --help 2>&1)
@@ -432,7 +433,7 @@ if [ "$(uname)" = "Darwin" ] && [ -d "$OFXB" ]; then
 				fail "under --quirks fusion: $qhash, the normal host at 24 fps: $nhash, at 30: $ohash"
 			fi ;;
 		*)
-			printf '   skipped: no test host with --quirks (set OFXHOST to one) -- Fusion'"'"'s missing frame rate is unchecked\n' ;;
+			printf '   skipped: no test host with --quirks (set OFXHOST to one) -- the no-frame-rate fallback is unchecked\n' ;;
 	esac
 fi
 

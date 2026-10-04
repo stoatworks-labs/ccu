@@ -81,9 +81,10 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
   to the frame from at most 40 τ (800 s) back, bit-identical to the stepped walk
   (`--laws`), 0.54 ms a frame at 60 fps. Frames render alone and out of order there;
   nothing may carry state between renders.
-- **Read every OFX host property as if it might be missing**: Resolve's Fusion page has
-  no frame rate at all, and an unguarded `getFrameRate()` failed every frame there.
-  `framesPerSecond()` tries output, source, effect, each in its own `try`, then 24 fps.
+- **Read every OFX host property as if it might be missing**: Resolve's Fusion page
+  reports the frame rate on the effect but not on its clips, and an unguarded clip
+  `getFrameRate()` failed every frame there. `framesPerSecond()` tries output, source,
+  effect, each in its own `try`, then 24 fps; in Fusion the effect's answers.
 - **Master Gain is head-end gain, in linear light, before white balance** — not a
   video gain after gamma. A CCU's dB gain is sensor gain, and putting it there is what
   lets the knee catch a gained-up highlight. AGENTS.md has the decision.
@@ -127,8 +128,8 @@ Read `AGENTS.md` before changing the chain (`Model.h`, the two shaders in
 - **Windows**: gated in Resolume Arena 7.27.1 on win-lab (Mesa llvmpipe, no GPU): 9/9, all 24 valued controls live. Never run on a Windows GPU.
 - **The OpenFX build has rendered in one real host, Resolve Studio 21.1 on macOS, as a
   Fusion tool** (2026-10-04, matching the test host to within 1/255) after the first
-  push failed every frame on Resolve's Fusion page (no frame rate). Never Vegas, Nuke
-  or Natron, nor Resolve's Edit or Color page. Otherwise only `ofxprobe`, stock (Filter, time 0, 8-bit) and an
+  push failed every frame on Resolve's Fusion page (no frame rate on its clips). Never
+  Vegas, Nuke or Natron, nor Resolve's Edit or Color page. Otherwise only `ofxprobe`, stock (Filter, time 0, 8-bit) and an
   extended build (any frame, float, General, batches, `--quirks fusion`), where it
   renders the FFGL build's pictures byte for byte, drift included. The Windows `.ofx` is CI-built and never run; the Linux one is only
   dlopened on Rocky 8 in CI. Ships from v0.2.0.

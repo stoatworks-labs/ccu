@@ -343,7 +343,8 @@ about 1/2,500 of an 8-bit step). What differs:
   rendered, and scrubbing shows the camera as it was at that frame. It starts from no drift at frame 0
   and settles over the first minute, as the Resolume build does when the effect is added. The replay
   looks back at most 800 seconds; what it leaves out weighs less than the rounding of the number.
-  Fusion reports no frame rate; there, Drift assumes 24 fps.
+  Resolve's Fusion page reports the frame rate on the effect but not on its clips; Drift reads the
+  effect's, and assumes 24 fps only where a host reports none.
 - **Alpha.** The chain works on straight colour, as it does in Resolume. A premultiplied clip is
   divided by its alpha on the way in and multiplied back on the way out, which changes nothing on an
   opaque clip.
@@ -447,8 +448,9 @@ failed to compile if one did, and a buffer that could not be allocated.
 - **No audio input and no presets**, in either build.
 - **The OpenFX build has rendered in one real host: DaVinci Resolve Studio 21.1 on macOS, as a
   Fusion tool**, where it matches the fleet's test host to within 1/255. Its first build failed
-  every frame on Resolve's Fusion page, which reports no frame rate; the fixed build assumes 24 fps
-  there. Only the Fusion page has been tried, and it has never been run in Vegas, Nuke or Natron.
+  every frame on Resolve's Fusion page, which reports no frame rate on its clips; the fixed build
+  reads the effect's, which Fusion does report. Only the Fusion page has been tried, and it has
+  never been run in Vegas, Nuke or Natron.
   Otherwise it has only run in the fleet's own OFX
   test host — 8-bit and float, at frame 0 and at frame 300 of a drifting
   clip, alone and in sequence — where it matches the Resolume build byte for byte. It has never
