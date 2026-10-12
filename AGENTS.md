@@ -510,7 +510,7 @@ build, at 320×180 and 1280×720 (identical at both unless said).
   differing as locally. None of that is a render in a commercial host.
 - **In a host, at any frame** — an extended `ofxprobe` built for this round in scratch
   space (`--in`, `--time`, `--frame-rate`, `--depth float`, `--batch` in one instance,
-  `--context general`, `--key`; not yet on resolume-ofx-bridge `main`):
+  `--context general`, `--key`; on resolume-ofx-bridge `main` since its v0.10.0, aa7a1d3):
   - A CCU test card (the shape of `buildCard`) through `cctest --pipe` and through the
     bundle: **0 of 57 600 pixels differ** at the defaults and four settings (one aimed
     at the card's skin disc), in 8-bit and in `--depth float`; the control (Detail

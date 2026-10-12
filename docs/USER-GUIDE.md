@@ -41,11 +41,11 @@ alone.*
 > shader is caught. All 23 controls are shown to change the picture.
 >
 > It has **never been loaded into Resolume on macOS**. The one host it's run in there is the
-> fleet's own test host, `oxbow`, for 120 frames. On Windows, a build of this source loads,
+> fleet's own test host, `oxbow`, for 120 frames. On Windows, v0.1.0's build loads,
 > registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no
 > GPU): all 29 host controls match the declaration and all 24 that take a value move the picture,
-> which is 9 of the fleet gate's 9 checks. Software rendering says nothing about a GPU or about
-> speed.
+> which is 9 of the fleet gate's 9 checks. v0.2.0's build hasn't been through the gate. Software
+> rendering says nothing about a GPU or about speed.
 >
 > The OpenFX build renders the same pictures as the Resolume build, byte for byte, in the fleet's
 > OFX test host, and in DaVinci Resolve Studio 21.1 on macOS it renders as a Fusion tool and
@@ -467,8 +467,9 @@ failed to compile if one did, and a buffer that could not be allocated.
   for byte. It's never been handed a 16-bit clip or a proxy resolution, and I haven't tested what a
   real host's colour management does to the clip. Its Windows build has never been run, and its
   Linux build has only been loaded, not rendered.
-- **Only ever run on an Apple M4 Max and on win-lab's software renderer**, although the macOS
-  build contains an Intel slice. On Windows, see the note at the top of this guide.
+- **Only ever run on Apple silicon (an M4 Max, and CI's macOS runner) and on win-lab's software
+  renderer**, although the macOS build contains an Intel slice. On Windows, see the note at the
+  top of this guide.
 - **There's a browser demo** at [ccu-demo.stoatworks-labs.com](https://ccu-demo.stoatworks-labs.com).
   It runs the plugin's own shaders in WebGL2 with the CPU half ported to JavaScript, and the page
   lists what it doesn't reproduce.

@@ -239,7 +239,7 @@ every FFGL row was re-run, unchanged, after the settings code moved into
 | `tools/ofx_agree.py` | the FFGL bundle's render (`cctest --pipe`, GPU) against the OpenFX bundle's (`ofxprobe`, CPU), 8-bit both sides, on the same picture: **0 of 57 600 pixels differ** at the defaults and at four settings that move every stage; the control (Detail Level 0.30 against 0.40) differs at 9 208 pixels. Also 0 differing at 1280×720 |
 | the OpenFX bundle | universal, exports `OfxGetPlugin`, `CFBundleExecutable` names the binary, ad-hoc signs; `ofxprobe` resolves `com.stoatworks.ccu` to this build, sees 23 controls in seven groups plus the About block, and renders |
 | A host with no frame rate | the test host's `--quirks fusion` is stricter than Resolve's Fusion page: it withholds the frame rate on the clips, as Fusion does, and on the effect too, where Fusion reports it (and gives the clips a [0, 0] frame range, no unmapped pair and no render-status props). The build before the guard fails every render under it, as it failed in Fusion; the guarded build renders and is **byte-identical to the normal host at 24 fps** at eight cases (Drift 1 at frames 0, 1, 300 and 86 400, float, the General context among them), deterministic alone and in batches; in the normal host its output is unchanged |
-| the OpenFX build in a host | an extended `ofxprobe` (any input, any time, float depth, batches in one instance; built for this round, not yet on resolume-ofx-bridge `main`): the CCU test card through both builds at the defaults and four settings, **0 of 57 600 pixels differ** in 8-bit and in float, the control differing at 15 464; **Drift 1 at frame 300, 60 fps, rendered alone: 0 pixels differ** from the FFGL plugin's frame 300 after 300 stepped frames, while frame 0 differs from it at 52 411 and 24 fps from 60 at 17 752; frame 300 alone is byte-identical to frame 300 after 0..299 in one instance and after 299, 5, 1000, 300, 0, 300; the General context renders what the Filter context does; keyframed controls are read at the render time; a premultiplied clip with alpha 255 → 0 keeps its alpha bitwise and lands within 2/255 of the FFGL build's straight-colour picture premultiplied |
+| the OpenFX build in a host | an extended `ofxprobe` (any input, any time, float depth, batches in one instance; built for this round, and on resolume-ofx-bridge `main` since its v0.10.0): the CCU test card through both builds at the defaults and four settings, **0 of 57 600 pixels differ** in 8-bit and in float, the control differing at 15 464; **Drift 1 at frame 300, 60 fps, rendered alone: 0 pixels differ** from the FFGL plugin's frame 300 after 300 stepped frames, while frame 0 differs from it at 52 411 and 24 fps from 60 at 17 752; frame 300 alone is byte-identical to frame 300 after 0..299 in one instance and after 299, 5, 1000, 300, 0, 300; the General context renders what the Filter context does; keyframed controls are read at the render time; a premultiplied clip with alpha 255 → 0 keeps its alpha bitwise and lands within 2/255 of the FFGL build's straight-colour picture premultiplied |
 | DaVinci Resolve | Resolve Studio 21.1 on macOS, 2026-10-04: the guarded build, added as a Fusion tool on the Fusion page, renders and **matches the test host to within 1/255** (the build before the guard failed every frame there) |
 
 Render cost, best of three runs of 60 frames after a warm-up, `glFinish`
@@ -273,12 +273,12 @@ headless CGL context, plus an `oxbow` load. I haven't tested how twenty-three
 controls in eight groups read in Arena's inspector on macOS, and I haven't
 watched the drift for more than a minute in a host.
 
-On Windows, a CI build of this source loads, registers and renders in Resolume
+On Windows, v0.1.0's CI build loads, registers and renders in Resolume
 Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29
 host controls match the declaration and all 24 that take a value move the
 picture, which is 9 of the fleet gate's 9 checks
-(`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a
-GPU or about speed.
+(`plugin-bench/arena/expect/ccu.json`, 2026-09-24). v0.2.0's build hasn't been
+through the gate. Software rendering says nothing about a GPU or about speed.
 
 The OpenFX build has **never been run in Vegas, Nuke or Natron**. In DaVinci
 Resolve, its first build went into Resolve Studio 21.1 once, as a Fusion tool,
