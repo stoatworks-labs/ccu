@@ -2,7 +2,8 @@
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
 > (Anthropic), directed and reviewed by a human author. It has **never been loaded into
-> Resolume**. It's loaded by [oxbow](https://github.com/stoatworks-labs/oxbow), which is a proper
+> Resolume on macOS**; on Windows it loads and renders in Arena 7.27.1, on software rendering.
+> On a Mac it's loaded by [oxbow](https://github.com/stoatworks-labs/oxbow), which is a proper
 > FFGL host but isn't Resolume, and an offline harness drives the real plugin class in a headless
 > GL context and reads each claim back out of the picture it made: every stage at its null, the
 > detail's overshoot (whole and fractional delays, horizontal and vertical), the coring, the knee,
