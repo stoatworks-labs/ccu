@@ -1,52 +1,45 @@
 # ccu
 
 > **AI-assisted project.** This codebase was created with [Claude](https://claude.com/claude-code)
-> (Anthropic), directed and reviewed by a human author. The chain is not
-> asserted but measured: an offline harness drives the real plugin class in a
-> headless GL context and reads each claim back out of the picture it made —
-> every stage at its null returns the input within a bound derived from the
-> OETF round trip in float, alpha bitwise, and again after a resize; a step's
-> overshoot is Detail Level × h / 4 for exactly the delay, whole and fractional,
-> horizontal and vertical; an edge below Coring gets no detail and one above it
-> gets the overshoot less the dead zone; above the knee point a linear ramp's
-> slope is Knee Slope, continuous at the point, per channel; a ramp follows
-> the OETF at three exponents and Black Gamma lifts only below its level; a
-> warm white through white balance and then the knee compresses in red where
-> the other order would clip it; the detail gain inside the skin window is
-> 1 − Skin Detail and outside it is 1 — with a negative control per check that
-> proves each can fail, and one recorded mutation of the shipped GLSL. It has
-> **never been loaded into Resolume**. It is loaded by
-> [oxbow](https://github.com/stoatworks-labs/oxbow), which is a real FFGL host
-> and is not Resolume. The OpenFX build renders the same pictures as the FFGL
-> build byte for byte through the fleet's OFX test host, and in DaVinci
-> Resolve Studio 21.1 on macOS it renders as a Fusion tool and matches that
-> test host to within 1/255. It has **never been run in Vegas, Nuke or
-> Natron**. See [Status](#status).
+> (Anthropic), directed and reviewed by a human author. It has **never been loaded into
+> Resolume**. It's loaded by [oxbow](https://github.com/stoatworks-labs/oxbow), which is a proper
+> FFGL host but isn't Resolume, and an offline harness drives the real plugin class in a headless
+> GL context and reads each claim back out of the picture it made: every stage at its null, the
+> detail's overshoot (whole and fractional delays, horizontal and vertical), the coring, the knee,
+> the gamma, the order of the stages and the skin window, each with a negative control that
+> proves the check can fail. The OpenFX build renders the same pictures as the FFGL build
+> byte for byte through the fleet's OFX test host, and in DaVinci Resolve Studio 21.1 on macOS it
+> renders as a Fusion tool and matches that test host to within 1/255. It has **never been run in
+> Vegas, Nuke or Natron**. The details are under [Status](#status).
 
 A broadcast camera's processing chain with every knob out, as an FFGL effect
-for [Resolume](https://resolume.com) Arena and Avenue — and, from the same
-source, as an OpenFX effect for DaVinci Resolve, Vegas, Nuke and Natron.
+for [Resolume](https://resolume.com) Arena and Avenue, and from the same source
+as an OpenFX effect for DaVinci Resolve, Vegas, Nuke and Natron. White balance,
+matrix, detail, knee, gamma, pedestal and clip, in the order a camera does them
+and labelled the way a CCU labels them, so you can give any clip that hot, haloed
+broadcast look, or make it look like a camera nobody's racked since the last OB.
 
 ![The test card through the chain at its defaults: halos on the bars, the top of the grey ramp gone milky through the knee, the skin disc softened while the jacket's weave stays sharp](docs/hero.png)
 
-<sub>One frame, rendered by `cctest`, the offline harness — not captured from
-Resolume. The defaults. The halos on the bars are the width of the detail
-delay, not of the edge; the top of the ramp and the warm sky have gone through
-the knee; the hair on the skin disc is softer than the weave on the jacket
-because of the skin window; the floor's fine texture is left alone by the
-coring.</sub>
+<sub>One frame at the defaults, rendered by `cctest`, the offline harness, rather
+than captured from Resolume. The halos on the bars are the width of the detail
+delay, not of the edge. The top of the ramp and the warm sky have gone through
+the knee, the hair on the skin disc is softer than the weave on the jacket
+because of the skin window, and the coring has left the floor's fine texture
+alone.</sub>
 
 [![CCU — a broadcast camera's processing chain with every knob out, for Resolume](docs/video-thumb.png)](https://www.youtube.com/watch?v=w5i91PWg-c4)
 
-*[Watch it](https://www.youtube.com/watch?v=w5i91PWg-c4) — 62 seconds:
+*[Watch it](https://www.youtube.com/watch?v=w5i91PWg-c4) (62 seconds):
 Detail Level from 0 to 3 and the delay from 2 to 9 pixels, the Show Detail
 view with Coring eating the texture, Skin Detail dropping bone and orange out
 of the view and the window moved to cyan, the knee on, off, gained into a hard
 clip and back on, a warm white compressed and then clipped in red first, Gamma
-and Black Gamma, the four matrix presets, pedestal and white clip. Every frame
-is the real plugin's output: an FFGL plugin has no window, so the footage is
-rendered by this repository's own offline harness (`cctest --pipe`, driven by
-a cue sheet) over Resolume's bundled demo clips, not captured from Resolume.*
+and Black Gamma, the four matrix presets, pedestal and white clip. It's all the
+plugin's own output. An FFGL plugin doesn't have a window to film, so the
+footage comes from this repo's offline harness (`cctest --pipe`, driven by a
+cue sheet) over Resolume's bundled demo clips rather than a capture from
+Resolume.*
 
 <!-- downloads:start -->
 
@@ -93,34 +86,34 @@ macOS builds are signed and notarised and open normally. The Windows builds are 
 
 ## The one idea
 
-The "video" look of a studio or OB camera is not a filter. It is a
-**processing chain in a fixed order**, each stage a known circuit with the
-knob a shader on the CCU panel turned:
+The "video" look of a studio or OB camera comes from a processing chain in a
+fixed order. Each stage is a known circuit with a knob on the CCU panel for the
+shader to turn (the person, not the GLSL):
 
     linear light → white balance → matrix → detail → knee → gamma and black gamma → pedestal → white clip
 
-Put the stages in the right order, in linear light, and label the knobs the
-way a CCU labels them, and the badly set-up camera looks fall out rather
-than being drawn:
+Put the stages in the right order, in linear light, label the knobs the way a
+CCU does, and all the looks of a badly set-up camera fall out of it without
+anyone having to draw them:
 
 - **Halos.** Detail boosts edges by adding a high-passed copy made from pixel
   and line delays, so a hard edge overshoots on one side and undershoots on
-  the other, **for the width of the delay, not of the edge**.
-- **Coring** keeps detail off the noise: small detail is not boosted at all,
+  the other, for the width of the delay, not of the edge.
+- **Coring** keeps detail off the noise: small detail isn't boosted at all,
   so a low coring sharpens the grain and a high one plastic-coats the picture.
 - **Skin detail** suppresses detail inside a hue window, and faces go soft
   while the jacket stays sharp.
 - **Knee.** Above the knee point highlights are compressed, so skies keep
-  their colour. With the knee off they clip — and because the knee follows
-  white balance, **a warm white clips in one channel first**.
+  their colour. With the knee off they clip, and because the knee follows
+  white balance, a warm white clips in one channel first.
 - **Black gamma** lifts the shadows on a curve below its level and nowhere
   else.
-- **Drifting white balance.** The R and B gains wander slowly, as a
-  warming-up camera did.
+- **Drifting white balance.** The R and B gains wander slowly, the way they
+  did on a camera that was still warming up.
 
-Nothing carries across frames except the drift, a double on the CPU. The
-chain is two GLSL passes and the constants — the OETF's, the matrix, the
-drift's step — are computed in double once a frame. The OpenFX build runs the
+Nothing carries across frames except the drift, which is a double on the CPU.
+The chain is two GLSL passes, and the constants (the OETF's, the matrix, the
+drift's step) are worked out in double once a frame. The OpenFX build runs the
 same two passes on the CPU; see [OpenFX](#openfx--resolve-vegas-nuke-natron).
 
 ## Controls
@@ -149,9 +142,9 @@ same two passes on the CPU; see [OpenFX](#openfx--resolve-vegas-nuke-natron).
 | **Output** | Mix | |
 | | Show Detail | the detail signal about mid grey, for setting up |
 
-Every numeric control is 0..1 to the host; the conversions above live in
-`Controls.cpp`, written so each null is exact in binary. The parameter names
-are at most 16 characters, which is why it is `Crispening Freq`.
+Every numeric control is 0..1 to the host. The conversions above live in
+`Controls.cpp`, written so each null is exact in binary. Parameter names get
+at most 16 characters, which is why it's `Crispening Freq`.
 
 ## OpenFX — Resolve, Vegas, Nuke, Natron
 
@@ -159,13 +152,13 @@ The same chain also builds as an OpenFX plugin, **CCU** in the **Stoatworks**
 group (`com.stoatworks.ccu`), for DaVinci Resolve (Edit, Color and Fusion),
 Vegas Pro, Nuke and Natron. It has the same 23 controls in the same seven
 groups, with the same 0..1 ranges and the same defaults, and it renders the
-same picture: everything between a slider and a uniform — the control laws,
+same picture. Everything between a slider and a uniform (the control laws,
 the OETF's constants, the matrix, the drift's pull on the gains, the rounding
-of each to float — is one function both builds call (`Chain.cpp`), and the
+of each to float) is one function both builds call (`Chain.cpp`), and the
 two GLSL passes are restated statement for statement on the CPU
 (`CpuChain.cpp`) and held to the GPU per pixel by the harness.
 
-The OpenFX build ships from v0.2.0: each release carries
+The OpenFX build ships from v0.2.0 on, and each release carries
 `ccu-ofx-macos-universal.zip`, `ccu-ofx-windows-x86_64.zip` and
 `ccu-ofx-linux-x86_64.zip`. Copy `CCU.ofx.bundle` from the zip into the
 standard OpenFX folder and restart the host:
@@ -176,33 +169,33 @@ Windows  C:\Program Files\Common Files\OFX\Plugins\
 Linux    /usr/OFX/Plugins/
 ```
 
-To build it yourself it comes out of the normal build as
-`build/CCU.ofx.bundle`; `-DCCU_BUILD_FFGL=OFF` builds it alone with nothing
+If you're building it yourself, it comes out of the normal build as
+`build/CCU.ofx.bundle`. `-DCCU_BUILD_FFGL=OFF` builds it alone with nothing
 but a compiler (no FFGL SDK, no GLEW), which is how the Linux release job
 builds it on AlmaLinux 8 for Rocky 8's glibc.
 
-**What differs from the Resolume build**, all of it:
+Everything that's different from the Resolume build:
 
 - **Drift is a function of the frame number.** Resolume steps the white
-  balance's random walk once per frame it is handed, from the moment the effect
+  balance's random walk once per frame it's handed, from the moment the effect
   starts. An OpenFX host renders frames in any order, alone and on several
-  threads at once, so here the walk is replayed — the same steps, the same
-  seeded noise, the frame's duration from the clip's frame rate — up to the
-  frame being rendered. A frame renders the same alone, in sequence, or twice;
-  scrubbing shows the camera as it was at that frame. It starts from no drift
+  threads at once, so here the walk is replayed (the same steps, the same
+  seeded noise, the frame's duration from the clip's frame rate) up to the
+  frame being rendered. A frame renders the same alone, in sequence or twice,
+  and scrubbing shows the camera as it was at that frame. It starts from no drift
   at frame 0 and settles over the first minute, as the Resolume build does when
   the effect is added. The replay starts at most 800 s (40 time constants)
-  back, where what it forgets weighs less than a double's rounding: it is
+  back, where what it forgets weighs less than a double's rounding: it's
   bit-identical to the walk stepped from frame 0 at every frame the harness
   probed, up to an hour in, and costs 0.5 ms a frame at 60 fps wherever the
   timeline starts (a replay from frame 0 would cost 2.4 ms an hour in, and
-  grow). **Resolve's Fusion page reports the frame rate on the effect but not
-  on its clips; Drift reads the effect's, and assumes 24 fps only where a host
-  reports none** — there, still one fixed picture per frame number, stepped as
-  if the timeline ran at 24.
+  keep growing). **Resolve's Fusion page reports the frame rate on the effect
+  but not on its clips; Drift reads the effect's, and assumes 24 fps only where
+  a host reports none.** There it's still one fixed picture per frame number,
+  stepped as if the timeline ran at 24.
 - **Alpha.** The chain works on straight colour in both builds. A
   premultiplied clip is divided by its alpha on the way in and multiplied back
-  on the way out; at alpha 1 — every camera clip — both are exact.
+  on the way out. At alpha 1 (every camera clip) both are exact.
 - **It runs on the CPU**, threaded through the host: about 15 ms a 1080p frame
   in a host lending it 8 threads of an M4 Max, against 0.17 ms for the GPU
   build. See Status.
@@ -216,14 +209,14 @@ either build.
 
 ## Status
 
-**v0.2.0, and honestly early.** v0.1.0 (released 2026-09-24) was the
-Resolume build alone; v0.2.0 adds the OpenFX build and leaves the Resolume
-build's pictures unchanged. Verified by
-measurement on an M4 Max, macOS 26.4, at 320×180 and 1280×720, on a fresh
-universal build. Never loaded into Resolume on macOS. The OpenFX build came
-after v0.1.0 (2026-10-03); its rows below are `tools/verify.sh` on the same
-machine, and every FFGL row was re-run unchanged after the settings code
-moved into `Chain.cpp` for both builds to share.
+**v0.2.0, and still early days.** v0.1.0 (released 2026-09-24) was the
+Resolume build on its own; v0.2.0 adds the OpenFX build and leaves the
+Resolume build's pictures as they were. Verified by measurement on an M4 Max,
+macOS 26.4, at 320×180 and 1280×720, on a fresh universal build. It's never
+been loaded into Resolume on macOS. The OpenFX build came after v0.1.0
+(2026-10-03). Its rows below are `tools/verify.sh` on the same machine, and
+every FFGL row was re-run, unchanged, after the settings code moved into
+`Chain.cpp` for both builds to share.
 
 | Check | Result |
 | --- | --- |
@@ -249,50 +242,62 @@ moved into `Chain.cpp` for both builds to share.
 | DaVinci Resolve | Resolve Studio 21.1 on macOS, 2026-10-04: the guarded build, added as a Fusion tool on the Fusion page, renders and **matches the test host to within 1/255** (the build before the guard failed every frame there) |
 
 Render cost, best of three runs of 60 frames after a warm-up, `glFinish`
-both sides, on a GPU shared with other builds: **0.06 ms** at 720p, **0.17
-ms** at 1080p, **0.68–0.70 ms** at 4K — 4% of a 60 fps frame at 4K. Two
-passes and eight texel fetches a pixel. macOS figures only.
+both sides, on a GPU that was busy with other builds: **0.06 ms** at 720p,
+**0.17 ms** at 1080p and **0.68–0.70 ms** at 4K, which is 4% of a 60 fps frame
+at 4K. It's two passes and eight texel fetches a pixel. These are macOS
+figures only.
 
 The OpenFX build on the CPU (`cctest --bench-cpu`, both passes, best of three
 runs of 20 frames): **66–71 ms** a 1080p frame on one thread, **10 ms** on 8
 threads (what `ofxprobe`'s thread suite gives it) and **8.5–8.9 ms** on all 16
-of the M4 Max's cores; 4K is 33–39 ms on 8–16 threads. The drift's replay adds
-0.54 ms a frame at 60 fps, 0.22 ms at 24. In a host (the extended `ofxprobe`,
-which lends 8 threads) the whole render action at 1080p — marshalling, the
-drift's replay an hour into a 60 fps timeline, both passes — is **14.8 ms** in
-8-bit and 14.4 ms in float, best of five. Not timed in any commercial host.
+of the M4 Max's cores. 4K is 33–39 ms on 8–16 threads. The drift's replay adds
+0.54 ms a frame at 60 fps and 0.22 ms at 24. In a host (the extended
+`ofxprobe`, which lends it 8 threads), the whole render action at 1080p,
+counting the marshalling, the drift's replay an hour into a 60 fps timeline
+and both passes, is **14.8 ms** in 8-bit and 14.4 ms in float, best of five.
+I haven't timed it in any commercial host.
 
 Seen on footage: nine of Resolume's bundled demo clips through `--pipe` at
-the defaults, judged by eye beside the source — halos of the delay's width on
-the bright edges, hot spots and white backgrounds compressed to a milky 90%,
-the fine dark texture left alone by the coring. A hot broadcast camera, not a
-broken one. Not measured.
+the defaults, judged by eye beside the source. There are halos of the delay's
+width on the bright edges, hot spots and white backgrounds compressed to a
+milky 90%, and the fine dark texture left alone by the coring. It looks like a
+hot broadcast camera rather than a broken one, but that's by eye and not
+measured.
 
 ### Not established
 
 It has **never been loaded into Resolume on macOS**. Everything above was
 compiled, rendered and measured offline against the real plugin class in a
-headless CGL context, plus an `oxbow` load. How twenty-three controls in eight
-groups read in Arena's inspector on macOS is untested. The drift has not been
-watched over a minute in a host. On Windows, a CI build of this source loads, registers and renders in Resolume Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29 host controls match the declaration and all 24 that take a value move the picture, 9 of the fleet gate's 9 checks (`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a GPU or about speed.
+headless CGL context, plus an `oxbow` load. I haven't tested how twenty-three
+controls in eight groups read in Arena's inspector on macOS, and I haven't
+watched the drift for more than a minute in a host.
+
+On Windows, a CI build of this source loads, registers and renders in Resolume
+Arena 7.27.1 on software rendering (win-lab, Mesa llvmpipe, no GPU): all 29
+host controls match the declaration and all 24 that take a value move the
+picture, which is 9 of the fleet gate's 9 checks
+(`plugin-bench/arena/expect/ccu.json`). Software rendering says nothing about a
+GPU or about speed.
 
 The OpenFX build has **never been run in Vegas, Nuke or Natron**. In DaVinci
-Resolve its first build was loaded once into Resolve Studio 21.1 as a Fusion
-tool and failed every frame: Fusion reports no frame rate on its clips, and
-reading a clip's threw out of the render. The reads are guarded now (the
-effect's rate, which Fusion does report, and 24 fps where a host reports none),
-and the test host's Fusion mode, which is stricter than Fusion and withholds
-the effect's rate too, renders it; on 2026-10-04 the guarded build rendered in
+Resolve, its first build went into Resolve Studio 21.1 once, as a Fusion tool,
+and failed every frame: Fusion reports no frame rate on its clips, and reading
+a clip's threw out of the render. The reads are guarded now (the effect's
+rate, which Fusion does report, and 24 fps where a host reports none), and the
+test host's Fusion mode, which is stricter than Fusion and withholds the
+effect's rate too, renders it. On 2026-10-04 the guarded build rendered in
 Resolve Studio 21.1 on macOS as a Fusion tool and matched the test host to
-within 1/255. That is the only real host it has rendered in, and the Fusion
-page the only place in Resolve it has been tried. It has run in `ofxprobe`, the fleet's
-OFX test host, stock and extended: Filter and General contexts, 8-bit and float
-RGBA, any frame, full frames at render scale 1. Nothing has handed it a 16-bit clip, a tile, a proxy
-render scale or an RGB-only clip. The Windows `.ofx` is built by CI and has
-never been run; the Linux `.ofx` is built on AlmaLinux 8 and only dlopened on
-Rocky 8 in CI, never rendered. How the controls read in a real host's
-inspector, and what a real host's colour management does to the clip before
-the chain sees it, are untested. There is a
+within 1/255. That's the only real host it's rendered in, and the Fusion page
+is the only place in Resolve I've tried it.
+
+It's run in `ofxprobe`, the fleet's OFX test host, stock and extended: Filter
+and General contexts, 8-bit and float RGBA, any frame, full frames at render
+scale 1. Nothing has handed it a 16-bit clip, a tile, a proxy render scale or
+an RGB-only clip yet. The Windows `.ofx` is built by CI and has never been
+run, and the Linux `.ofx` is built on AlmaLinux 8 and only dlopened on Rocky 8
+in CI, never rendered. I haven't tested how the controls read in a real host's
+inspector, or what a real host's colour management does to the clip before the
+chain sees it. There's a
 [user guide](https://stoatworks-labs.com/software/ccu/guide/) and a browser
 demo at [ccu-demo.stoatworks-labs.com](https://ccu-demo.stoatworks-labs.com/),
 which is a port of the shaders rather than the plugin.
@@ -300,16 +305,15 @@ which is a port of the shaders rather than the plugin.
 ### Found filming the release video
 
 The video was rendered by `cctest --pipe` over Resolume's bundled demo clips,
-after every one of the 33 was put through the defaults: nothing floods or
-blanks, the dark clips stay dark, and the defaults stood. One claim was
-corrected by the footage: a warm white with the knee off does not give
-cyan-edged highlights. Red reaches the ceiling first, so each highlight's core
-goes white inside a warm surround; with the knee on it stays warm all the way
-up.
+after every one of the 33 had been through the defaults: nothing floods or
+blanks, the dark clips stay dark, and the defaults stood. The footage did
+correct one claim. A warm white with the knee off doesn't give cyan-edged
+highlights. Red hits the ceiling first, so each highlight's core goes white
+inside a warm surround, and with the knee on it stays warm all the way up.
 
 ## Build
 
-Needs CMake 3.15+, a C++17 compiler, and the FFGL SDK submodule.
+You'll need CMake 3.15+, a C++17 compiler and the FFGL SDK submodule.
 
 ```bash
 git clone --recursive https://github.com/stoatworks-labs/ccu
@@ -319,17 +323,18 @@ cmake --build build --parallel
 cmake --install build     # into ~/Documents/Resolume Arena/Extra Effects
 ```
 
-macOS builds are universal (Apple Silicon + Intel) by default; add
-`-DCMAKE_OSX_ARCHITECTURES=arm64` for a faster dev build. Windows needs GLEW via vcpkg.
+macOS builds are universal (Apple Silicon + Intel) by default. Add
+`-DCMAKE_OSX_ARCHITECTURES=arm64` for a quicker dev build. Windows needs GLEW via vcpkg.
 
 The same build produces the OpenFX plugin as `build/CCU.ofx.bundle`
 (`-DBUILD_OFX=OFF` to skip it). `-DCCU_BUILD_FFGL=OFF` builds the OpenFX plugin
-alone, with no FFGL SDK and no GLEW — any C++17 compiler on macOS, Windows or
-Linux. Nothing installs it: copy the bundle into the OpenFX folder above.
+alone, with no FFGL SDK and no GLEW, on any C++17 compiler on macOS, Windows
+or Linux. Nothing installs it, so copy the bundle into the OpenFX folder above
+yourself.
 
 ## Building and testing
 
-The offline harness renders the real plugin class headlessly:
+The offline harness renders the plugin class itself, headless:
 
 ```bash
 ./build/cctest --out /tmp/frame.png --size 1920x1080   # the test card
@@ -345,8 +350,9 @@ python3 tools/sweep.py                                 # no control is silently 
 tools/verify.sh                                        # all of it, on a fresh universal build
 ```
 
-Every check takes `--size`; run it at 320×180 as well as the raster you care about.
-Footage goes through the real shaders with `--pipe`, in the fleet's frame format:
+Every check takes `--size`, so run it at 320×180 as well as whatever raster you
+care about. Footage goes through the plugin's own shaders with `--pipe`, in the
+fleet's frame format:
 
 ```bash
 ffmpeg -i in.mov -f rawvideo -pix_fmt rgba - \
@@ -364,13 +370,14 @@ comes from.
 the plugin's own linear and process shaders in WebGL2, on generated clips, with
 every control the plugin declares in its own order, groups and defaults.
 `demo/tools/check_shaders.py` fails `tools/verify.sh` if the page's copy of any
-shader drifts from `source/Shaders.cpp`. Everything the C++ computes on the way
-to a uniform — the control laws in `Controls.cpp`, the OETF's constants from the
-exponent, the matrices and the white-balance drift in `Model.h` — is a hand port
-to JavaScript in `demo/plugin.js`, and nothing checks that but a reader. It is
-not the plugin: no Resolume, no FFGL, GLSL ES 3.00 rather than GL 4.1, the
-kit's clock rather than the plugin's, and a float render target is required.
-The page says all of this itself. Source in [`demo/`](demo/).
+shader drifts from `source/Shaders.cpp`. Everything the C++ works out on the
+way to a uniform (the control laws in `Controls.cpp`, the OETF's constants from
+the exponent, the matrices and the white-balance drift in `Model.h`) is a hand
+port to JavaScript in `demo/plugin.js`, and nothing checks that except somebody
+reading it. It isn't the plugin: there's no Resolume and no FFGL, it's GLSL ES
+3.00 rather than GL 4.1, it runs on the kit's clock rather than the plugin's,
+and it needs a float render target. The page says all this itself. The source
+is in [`demo/`](demo/).
 
 <!-- attributions:start -->
 This project is built on other people's work — see [ATTRIBUTIONS.md](ATTRIBUTIONS.md).
